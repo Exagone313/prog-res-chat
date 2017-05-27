@@ -2,7 +2,8 @@ CFLAGS ?= -O2 -Wall -Wextra -pedantic
 BIN ?= server
 
 SRCDIR := src
-SRC := main.c
+SRC := main.c \
+	usage.c
 
 OBJ := $(addprefix $(SRCDIR)/,$(SRC:.c=.o))
 CFLAGS += -std=gnu11 -MMD -MP
