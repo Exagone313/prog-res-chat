@@ -10,14 +10,14 @@ static int client_port = DEFAULT_CLIENT_BIND_PORT;
 static long promoter_address = DEFAULT_BIND_ADDRESS;
 static int promoter_port = DEFAULT_PROMOTER_BIND_PORT;
 
-int print_usage(int argc, char **argv)
+int print_usage(const int argc, const char **argv)
 {
 	struct in_addr ia;
 
 	if(argc == 1)
 		return 0;
 
-	if(argc > 1 && argc <= 5) {
+	if(argc <= 5) {
 		if(argv[1][0] == '-')
 			goto usage;
 		if(argc > 1 && argv[1][0] != '_') {

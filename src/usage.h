@@ -2,7 +2,7 @@
 #define USAGE_H
 
 /* returns 0 if parameters are correct */
-int print_usage(int argc, char **argv);
+int print_usage(const int argc, const char **argv);
 /* get client bind address parameter or default one */
 long getClientBindAddress();
 /* get client bind port parameter or default one */
