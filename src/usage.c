@@ -50,7 +50,7 @@ int print_usage(const int argc, const char **argv)
 	}
 
 usage:
-	fprintf(stderr, "Usage: %s [client-address | _] [client-port | _] [promoter-address | _] [promoter-port | _]\n"
+	fprintf(stderr, "Usage: %s [client-address [client-port [promoter-address [promoter-port]]]]\n"
 			"\n"
 			"\t_:\t\t\tDefault value\n"
 			"\tclient-address:\t\tBind address for clients\t(Default: %s)\n"
