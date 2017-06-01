@@ -9,5 +9,16 @@
 /* must be 1024-9999 */
 #define DEFAULT_CLIENT_BIND_PORT 5180
 #define DEFAULT_PROMOTER_BIND_PORT 5181
+/* number of thread pool unis */
+#define THREAD_POOL_UNITS 4
+
+/* internal constants */
+
+/* id: 0-99 */
+#define MAX_CLIENTS 100
+#define SOCKET_BUFFER_MAX_LENGTH 1024
+
+#define N_STATE_TASK_NONE 0
+#define N_STATE_TASK_READ 1
 
 #endif

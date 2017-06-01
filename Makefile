@@ -3,7 +3,9 @@ BIN ?= server
 
 SRCDIR := src
 SRC := main.c \
-	usage.c
+	usage.c \
+	state.c \
+	thread.c
 
 OBJ := $(addprefix $(SRCDIR)/,$(SRC:.c=.o))
 CFLAGS += -std=gnu11 -MMD -MP
