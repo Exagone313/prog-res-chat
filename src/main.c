@@ -47,7 +47,6 @@ int main(const int argc, const char **argv)
 	while(!quit)
 		pause();
 
-	// TODO terminate jobs...
 	state.quit = 1;
 	pthread_join(master_thread, NULL);
 

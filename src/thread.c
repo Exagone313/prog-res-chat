@@ -12,6 +12,7 @@
 #include "constants.h"
 #include "state.h"
 #include "thread.h"
+#include "usage.h"
 
 void *master_thread_func(void *cls) // master thread
 {
@@ -234,11 +235,22 @@ void *net_thread_func(void *cls) // net thread
 	pthread_mutex_lock(&state->comm_mutex);
 	dbg("net locked");
 
+	struct sockaddr_in client_sin = {AF_INET, getClientBindPort(), {getClientBindAddress()}, {0}};
+	//struct sockaddr_in promoter_sin = {AF_INET, getPromoterBindPort(), {getPromoterBindAddress()}, {0}};
+
 	state->net.client_server = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
 	if(state->net.client_server < 0)
 		goto clean;
 
 	// TODO bind, listen
+	if(bind(state->net.client_server, (struct sockaddr *) &client_sin, sizeof(client_sin))) {
+		perror("Bind client server");
+		goto close_client_server;
+	}
+	if(listen(state->net.client_server, 100)) {
+		perror("Listen client server");
+		goto close_client_server;
+	}
 	// TODO create promoter socket
 
 	err = 0;
@@ -262,7 +274,8 @@ void *net_thread_func(void *cls) // net thread
 		if(state->net.client[i] > 0)
 			close(state->net.client[i]);
 	}
-
+close_client_server:
+	close(state->net.client_server);
 clean:
 	if(err) {
 		state->net.connected = -2;
@@ -283,10 +296,7 @@ void *unit_thread_func(void *cls) // thread pool unit
 
 	do {
 		dbgf("unit lock %d.", unit_state->id);
-		if(pthread_mutex_lock(&state->comm_mutex)) {
-			perror("can't lock");
-			goto exit;
-		}
+		pthread_mutex_lock(&state->comm_mutex);
 		do {
 			dbgf("unit wait %d.", unit_state->id);
 			pthread_cond_wait(&state->comm_cond, &state->comm_mutex);
