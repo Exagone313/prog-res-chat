@@ -10,6 +10,7 @@ typedef struct u_state u_state; // thread pool unit
 
 struct n_state { // TODO blocks on select
 	int connected; // number of connected clients
+	int exitpipe;
 	int client_server; // listening socket for clients
 	int promoter_server; // listening socket for promoters
 	int client[MAX_CLIENTS]; // connected client's sockets

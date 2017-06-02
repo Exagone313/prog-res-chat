@@ -13,17 +13,12 @@
 #include "state.h"
 #include "thread.h"
 
-#ifdef DEBUG
-#define dbg(format, ...) fprintf(stderr, "[DEBUG] " format "\n", ##__VA_ARGS__);
-#endif
-#define err(format, ...) fprintf(stderr, "[ERROR] " format "\n", ##__VA_ARGS__);
-
 void *master_thread_func(void *cls) // master thread
 {
 	m_state *state;
 	pthread_t net_thread;
 	pthread_t unit_thread[THREAD_POOL_UNITS];
-	int err, thread_i;
+	int err, thread_i, exitpipe[2];
 
 	err = 1;
 	state = (m_state *) cls;
@@ -36,7 +31,10 @@ void *master_thread_func(void *cls) // master thread
 		goto destroy_pool_mutex;
 	if(pthread_cond_init(&state->pool_cond, NULL))
 		goto destroy_comm_cond;
+	if(pipe(exitpipe) < 0)
+		goto clean;
 
+	state->net.exitpipe = exitpipe[0];
 	state->net.connected = -1;
 
 	pthread_mutex_lock(&state->comm_mutex);
@@ -58,15 +56,25 @@ void *master_thread_func(void *cls) // master thread
 
 	for(thread_i = 0; thread_i < THREAD_POOL_UNITS; thread_i++) {
 		if(pthread_create(&unit_thread[thread_i], &state->thread_attr,
-					unit_thread_func, (void *) (state->unit + thread_i))) {
-			; // TODO make other threads including net to end
-			goto clean;
-		}
+					unit_thread_func, (void *) (state->unit + thread_i)))
+			goto quit;
 	}
 
 	err = 0;
 
 	// TODO loop, block on communication
+quit:
+	state->quit = 1;
+
+	// stop net thread
+	close(exitpipe[1]);
+	pthread_join(net_thread, NULL);
+
+	// stop units
+	for(thread_i--; thread_i >= 0; thread_i--) {
+		pthread_cond_broadcast(&state->pool_cond);
+		pthread_join(unit_thread[thread_i], NULL);
+	}
 
 //:_thread_units: (goto)
 clean:
@@ -79,11 +87,9 @@ destroy_pool_mutex:
 destroy_comm_mutex:
 	pthread_mutex_destroy(&state->comm_mutex);
 exit:
-	state->quit = 1;
-	if(err) {
+	if(err)
 		err("Failed to start server.");
-		pthread_kill(state->main, SIGTERM);
-	}
+	pthread_kill(state->main, SIGTERM);
 #ifdef DEBUG
 	dbg("Stopping master thread.");
 #endif
@@ -96,6 +102,9 @@ static void create_fds(m_state *state, fd_set *readfds, fd_set *writefds)
 
 	FD_ZERO(readfds);
 	FD_ZERO(writefds);
+
+	// add exit pipe
+	FD_SET(state->net.exitpipe, readfds);
 
 	// add server sockets
 	FD_SET(state->net.client_server, readfds);
@@ -120,21 +129,47 @@ static void create_fds(m_state *state, fd_set *readfds, fd_set *writefds)
 	// TODO watch promoter sockets
 }
 
+static int message_separator(const char *buffer, int buffer_length) {
+	int buffer_pos, separator_pos;
+
+	buffer_length -= 3;
+	for(buffer_pos = 0; buffer_pos <= buffer_length; buffer_pos++) {
+		for(separator_pos = 0; separator_pos < 3; separator_pos++) {
+			if(buffer[buffer_pos + separator_pos] != '+')
+				break;
+		}
+		if(separator_pos == 3)
+			return buffer_pos;
+	}
+
+	return -1;
+}
+
 static void select_result(m_state *state, fd_set *readfds, fd_set *writefds)
 {
-	int i, sock, nbytes;
+	int i, sock, nbytes, r;
 	struct sockaddr_in sin;
 	socklen_t sinlen;
 
 	// activity on connected clients
 	for(i = 0; i < MAX_CLIENTS; i++) {
 		// send message (highest priority)
-		if(state->net.task[i] == 2 && FD_ISSET(state->net.client[i], writefds)) {
-			//nbytes = send(
+		if(state->net.task[i] == 2 && FD_ISSET(state->net.client[i], writefds)) { // TODO
+			nbytes = 0;
+			//nbytes = write(state->net.client[i], state->net.buffer[i], state->net.buffer_length[i]); // FIXME need a second buffer!!! <--------
+			if(nbytes == 0)
+				state->net.task[i] = 3;
+			else if(nbytes < 0) {
+				if(errno != EAGAIN)
+					state->net.task[i] = 3;
+			}
+			else {
+				state->net.buffer_length[i] = 0; // FIXME
+				state->net.task[i] = 1;
+			}
 		}
 		// read message
 		else if(state->net.task[i] == 1 && FD_ISSET(state->net.client[i], readfds)) {
-			// TODO check for errno EAGAIN, or close socket, on error
 			nbytes = read(state->net.client[i],
 					state->net.buffer[i] + state->net.buffer_length[i],
 					SOCKET_BUFFER_MAX_LENGTH - state->net.buffer_length[i]);
@@ -148,9 +183,12 @@ static void select_result(m_state *state, fd_set *readfds, fd_set *writefds)
 					state->net.task[i] = 3;
 			}
 			else if(0) { // check if the buffer contains the message separator
+				r = message_separator(state->net.buffer[i], state->net.buffer_length[i]);
+				if(r >= 0) { // TODO create read task with save separator position
+				}
 			}
-			else if(0) {
-			}
+			else if(state->net.buffer_length[i] == SOCKET_BUFFER_MAX_LENGTH) // didn't get a message with all these chars, close the socket
+				state->net.task[i] = 3;
 		}
 	}
 
@@ -236,7 +274,7 @@ void *unit_thread_func(void *cls) // thread pool unit
 	state = unit_state->master;
 
 #ifdef DEBUG
-	dbg("Stopping unit thread %ld.", (long) cls);
+	dbgf("Stopping unit thread %ld.", (long) cls);
 #endif
 	pthread_exit(NULL);
 }

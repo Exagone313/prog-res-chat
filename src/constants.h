@@ -21,4 +21,13 @@
 #define N_STATE_TASK_NONE 0
 #define N_STATE_TASK_READ 1
 
+/* macro utils */
+
+#ifdef DEBUG
+#define dbg(format) fprintf(stderr, "[DEBUG] " format "\n");
+#define dbgf(format, ...) fprintf(stderr, "[DEBUG] " format "\n", ##__VA_ARGS__);
+#endif
+#define err(format) fprintf(stderr, "[ERROR] " format "\n");
+#define errf(format, ...) fprintf(stderr, "[ERROR] " format "\n", ##__VA_ARGS__);
+
 #endif

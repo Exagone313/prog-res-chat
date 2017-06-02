@@ -2,6 +2,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <unistd.h>
+#include "constants.h"
 #include "state.h"
 #include "thread.h"
 #include "usage.h"
@@ -25,7 +26,7 @@ int main(const int argc, const char **argv)
 		goto exit;
 
 	if(getuid() == 0 || getgid() == 0) {
-		fprintf(stderr, "This program must not be ran as root.\n");
+		err("This program must not be ran as root.");
 		goto exit;
 	}
 
@@ -47,6 +48,9 @@ int main(const int argc, const char **argv)
 		pause();
 
 	// TODO terminate jobs...
+	state.quit = 1;
+	pthread_join(master_thread, NULL);
+
 free:
 	pthread_attr_destroy(&state.thread_attr);
 exit:
