@@ -8,7 +8,7 @@ typedef struct m_state m_state; // master thread
 typedef struct n_state n_state; // net thread
 typedef struct u_state u_state; // thread pool unit
 
-struct n_state { // TODO blocks on select
+struct n_state {
 	int connected; // number of connected clients
 	int exitpipe;
 	int client_server; // listening socket for clients
@@ -19,16 +19,18 @@ struct n_state { // TODO blocks on select
 	int buffer_length[MAX_CLIENTS]; // actual lengths
 };
 
-struct u_state { // TODO blocks on cond wait + shared mutex lock across units
+struct u_state {
 	m_state *master;
+	int id;
 };
 
-struct m_state { // TODO blocks on cond wait + dedicated mutex lock, unlock as fast as possible
+struct m_state {
 	pthread_t main; // main process to signal in case of failure
 	pthread_attr_t thread_attr;
 	int quit;
 	n_state net;
-	int client_socket_id[MAX_CLIENTS]; // for a user id, contains its position in net.client
+	int user_socket_id[MAX_CLIENTS]; // for a user id, contains its position in net.client (-1 for disconnected)
+	char user_name[MAX_CLIENTS][8];
 	pthread_mutex_t comm_mutex;
 	pthread_cond_t comm_cond;
 	u_state unit[THREAD_POOL_UNITS];

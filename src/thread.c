@@ -21,6 +21,7 @@ void *master_thread_func(void *cls) // master thread
 	int err, thread_i, exitpipe[2];
 
 	err = 1;
+	thread_i = 0;
 	state = (m_state *) cls;
 
 	if(pthread_mutex_init(&state->comm_mutex, NULL))
@@ -39,30 +40,39 @@ void *master_thread_func(void *cls) // master thread
 
 	pthread_mutex_lock(&state->comm_mutex);
 
+	dbg("m create net");
 	if(pthread_create(&net_thread, &state->thread_attr,
 				net_thread_func, (void *) state)) {
 		pthread_mutex_unlock(&state->comm_mutex);
 		goto clean;
 	}
 
-	do // block until net thread creates socket(s)
+	do { // block until net thread creates socket(s)
+		dbg("m wait");
 		pthread_cond_wait(&state->comm_cond, &state->comm_mutex);
-	while(state->net.connected == -1);
+		dbg("m signaled");
+	} while(state->net.connected == -1);
 
-	pthread_mutex_unlock(&state->comm_mutex);
+	if(state->net.connected == -2) { // net thread failed to start networking
+		pthread_mutex_unlock(&state->comm_mutex);
+		goto quit;
+	}
 
-	if(state->net.connected == -2) // net thread failed to start networking
-		goto clean;
-
-	for(thread_i = 0; thread_i < THREAD_POOL_UNITS; thread_i++) {
+	dbg("m create units");
+	// start thread pool units
+	for(; thread_i < THREAD_POOL_UNITS; thread_i++) {
 		if(pthread_create(&unit_thread[thread_i], &state->thread_attr,
 					unit_thread_func, (void *) (state->unit + thread_i)))
 			goto quit;
 	}
+	dbg("m unlock");
+	pthread_mutex_unlock(&state->comm_mutex);
 
+	dbg("m successful start");
 	err = 0;
 
 	// TODO loop, block on communication
+	sleep(10);
 quit:
 	state->quit = 1;
 
@@ -71,12 +81,12 @@ quit:
 	pthread_join(net_thread, NULL);
 
 	// stop units
+	pthread_cond_broadcast(&state->comm_cond);
+	pthread_cond_broadcast(&state->pool_cond); // FIXME
 	for(thread_i--; thread_i >= 0; thread_i--) {
-		pthread_cond_broadcast(&state->pool_cond);
+		dbgf("Join thread %d.", thread_i);
 		pthread_join(unit_thread[thread_i], NULL);
 	}
-
-//:_thread_units: (goto)
 clean:
 //destroy_pool_cond:
 	pthread_cond_destroy(&state->pool_cond);
@@ -90,9 +100,7 @@ exit:
 	if(err)
 		err("Failed to start server.");
 	pthread_kill(state->main, SIGTERM);
-#ifdef DEBUG
 	dbg("Stopping master thread.");
-#endif
 	pthread_exit(NULL);
 }
 
@@ -224,6 +232,7 @@ void *net_thread_func(void *cls) // net thread
 
 	state = (m_state *) cls;
 	pthread_mutex_lock(&state->comm_mutex);
+	dbg("net locked");
 
 	state->net.client_server = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
 	if(state->net.client_server < 0)
@@ -234,8 +243,10 @@ void *net_thread_func(void *cls) // net thread
 
 	err = 0;
 
-	state->net.connected = 0;
+	state->net.connected = 0; // master thread waits for this value to change
+	dbg("net signal");
 	pthread_cond_signal(&state->comm_cond);
+	dbg("net unlock");
 	pthread_mutex_unlock(&state->comm_mutex);
 
 	do {
@@ -247,7 +258,6 @@ void *net_thread_func(void *cls) // net thread
 		// TODO create task and cond_signal unit
 	} while(1);
 
-	// TODO close sockets
 	for(i = 0; i < MAX_CLIENTS; i++) {
 		if(state->net.client[i] > 0)
 			close(state->net.client[i]);
@@ -259,9 +269,7 @@ clean:
 		pthread_cond_signal(&state->comm_cond);
 		pthread_mutex_unlock(&state->comm_mutex);
 	}
-#ifdef DEBUG
 	dbg("Stopping net thread.");
-#endif
 	pthread_exit(NULL);
 }
 
@@ -273,8 +281,25 @@ void *unit_thread_func(void *cls) // thread pool unit
 	unit_state = (u_state *) cls;
 	state = unit_state->master;
 
-#ifdef DEBUG
-	dbgf("Stopping unit thread %ld.", (long) cls);
-#endif
+	do {
+		dbgf("unit lock %d.", unit_state->id);
+		if(pthread_mutex_lock(&state->comm_mutex)) {
+			perror("can't lock");
+			goto exit;
+		}
+		do {
+			dbgf("unit wait %d.", unit_state->id);
+			pthread_cond_wait(&state->comm_cond, &state->comm_mutex);
+			if(state->quit) {
+				pthread_mutex_unlock(&state->comm_mutex);
+				goto exit;
+			}
+		} while(0); // TODO check for message
+		dbgf("unit unlock %d.", unit_state->id);
+		pthread_mutex_unlock(&state->comm_mutex);
+	} while(1);
+
+exit:
+	dbgf("Stopping unit thread %d.", unit_state->id);
 	pthread_exit(NULL);
 }
