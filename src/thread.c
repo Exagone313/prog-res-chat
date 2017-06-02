@@ -19,7 +19,7 @@ void *master_thread_func(void *cls) // master thread
 	m_state *state;
 	pthread_t net_thread;
 	pthread_t unit_thread[THREAD_POOL_UNITS];
-	int err, thread_i, exitpipe[2];
+	int err, thread_i;
 
 	err = 1;
 	thread_i = 0;
@@ -33,10 +33,7 @@ void *master_thread_func(void *cls) // master thread
 		goto destroy_pool_mutex;
 	if(pthread_cond_init(&state->pool_cond, NULL))
 		goto destroy_comm_cond;
-	if(pipe(exitpipe) < 0)
-		goto clean;
 
-	state->net.exitpipe = exitpipe[0];
 	state->net.connected = -1;
 
 	pthread_mutex_lock(&state->comm_mutex);
@@ -66,19 +63,26 @@ void *master_thread_func(void *cls) // master thread
 					unit_thread_func, (void *) (state->unit + thread_i)))
 			goto quit;
 	}
-	dbg("m unlock");
-	pthread_mutex_unlock(&state->comm_mutex);
 
 	dbg("m successful start");
 	err = 0;
 
-	// TODO loop, block on communication
-	sleep(10);
+	do {
+		dbg("m wait");
+		if(state->quit)
+			break;
+		// TODO read communication
+		pthread_cond_wait(&state->comm_cond, &state->comm_mutex);
+		dbg("m signaled");
+	} while(0);
+	dbg("m unlock");
+	pthread_mutex_unlock(&state->comm_mutex);
+
 quit:
 	state->quit = 1;
 
-	// stop net thread
-	close(exitpipe[1]);
+	// stop net thread if necessary
+	close(state->net.exitpipe[1]);
 	pthread_join(net_thread, NULL);
 
 	// stop units
@@ -113,7 +117,7 @@ static void create_fds(m_state *state, fd_set *readfds, fd_set *writefds)
 	FD_ZERO(writefds);
 
 	// add exit pipe
-	FD_SET(state->net.exitpipe, readfds);
+	FD_SET(state->net.exitpipe[0], readfds);
 
 	// add server sockets
 	FD_SET(state->net.client_server, readfds);
@@ -123,7 +127,7 @@ static void create_fds(m_state *state, fd_set *readfds, fd_set *writefds)
 		if(state->net.task[i] == 1)
 			FD_SET(state->net.client[i], readfds);
 		// add client sockets that wait for send
-		else if(state->net.task[i] == 2)
+		else if(state->net.task[i] == 2) // TODO try to send messages until it blocks before setting this
 			FD_SET(state->net.client[i], writefds);
 		// close socket
 		else if(state->net.task[i] == 3) {
@@ -187,13 +191,13 @@ static void select_result(m_state *state, fd_set *readfds, fd_set *writefds)
 				state->net.task[i] = 3;
 			else if(nbytes < 0) { // check for blocking, close socket on real error
 				if(errno == EAGAIN)
-					state->net.buffer_length[i]++;
+					state->net.buffer_length[i]++; // it was decreased by 1 before
 				else
 					state->net.task[i] = 3;
 			}
 			else if(0) { // check if the buffer contains the message separator
 				r = message_separator(state->net.buffer[i], state->net.buffer_length[i]);
-				if(r >= 0) { // TODO create read task with save separator position
+				if(r >= 0) { // TODO create read task with save separator position, then memmove (with sizeof)
 				}
 			}
 			else if(state->net.buffer_length[i] == SOCKET_BUFFER_MAX_LENGTH) // didn't get a message with all these chars, close the socket
@@ -215,12 +219,13 @@ static void select_result(m_state *state, fd_set *readfds, fd_set *writefds)
 					break;
 				}
 			}
-			if(i == MAX_CLIENTS) // cannot manage more clients
+			if(i == MAX_CLIENTS) { // cannot manage more clients
 				close(sock);
+				dbg("Cannot accept a new client.");
+			}
+			dbgf("Accept new client from %d:%d.", sin.sin_addr.s_addr, ntohs(sin.sin_port));
 		}
 	}
-
-	// writefds
 }
 
 void *net_thread_func(void *cls) // net thread
@@ -228,6 +233,8 @@ void *net_thread_func(void *cls) // net thread
 	m_state *state;
 	int err, i;
 	fd_set readfds, writefds;
+	struct sockaddr_in client_sin = {AF_INET, htons(getClientBindPort()), {getClientBindAddress()}, {0}};
+	//struct sockaddr_in promoter_sin = {AF_INET, htons(getPromoterBindPort()), {getPromoterBindAddress()}, {0}};
 
 	err = 1;
 
@@ -235,22 +242,19 @@ void *net_thread_func(void *cls) // net thread
 	pthread_mutex_lock(&state->comm_mutex);
 	dbg("net locked");
 
-	struct sockaddr_in client_sin = {AF_INET, getClientBindPort(), {getClientBindAddress()}, {0}};
-	//struct sockaddr_in promoter_sin = {AF_INET, getPromoterBindPort(), {getPromoterBindAddress()}, {0}};
-
 	state->net.client_server = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
 	if(state->net.client_server < 0)
 		goto clean;
 
-	// TODO bind, listen
 	if(bind(state->net.client_server, (struct sockaddr *) &client_sin, sizeof(client_sin))) {
-		perror("Bind client server");
+		perror("Cannot bind client server");
 		goto close_client_server;
 	}
 	if(listen(state->net.client_server, 100)) {
-		perror("Listen client server");
+		perror("Cannot listen client server");
 		goto close_client_server;
 	}
+
 	// TODO create promoter socket
 
 	err = 0;
@@ -281,6 +285,12 @@ clean:
 		state->net.connected = -2;
 		pthread_cond_signal(&state->comm_cond);
 		pthread_mutex_unlock(&state->comm_mutex);
+	} else {
+		dbg("net lock");
+		pthread_mutex_lock(&state->comm_mutex);
+		dbg("net broadcast");
+		pthread_cond_broadcast(&state->comm_cond);
+		pthread_mutex_unlock(&state->comm_mutex);
 	}
 	dbg("Stopping net thread.");
 	pthread_exit(NULL);
@@ -294,20 +304,20 @@ void *unit_thread_func(void *cls) // thread pool unit
 	unit_state = (u_state *) cls;
 	state = unit_state->master;
 
+	dbgf("unit lock %d.", unit_state->id);
+	pthread_mutex_lock(&state->comm_mutex);
 	do {
-		dbgf("unit lock %d.", unit_state->id);
-		pthread_mutex_lock(&state->comm_mutex);
-		do {
-			dbgf("unit wait %d.", unit_state->id);
-			pthread_cond_wait(&state->comm_cond, &state->comm_mutex);
-			if(state->quit) {
-				pthread_mutex_unlock(&state->comm_mutex);
-				goto exit;
-			}
-		} while(0); // TODO check for message
-		dbgf("unit unlock %d.", unit_state->id);
-		pthread_mutex_unlock(&state->comm_mutex);
+		dbgf("unit locked/signaled %d.", unit_state->id);
+		if(state->quit) {
+			pthread_mutex_unlock(&state->comm_mutex);
+			goto exit;
+		}
+		// TODO check for message
+		dbgf("unit wait %d.", unit_state->id);
+		pthread_cond_wait(&state->pool_cond, &state->comm_mutex);
 	} while(1);
+	dbgf("unit unlock %d.", unit_state->id);
+	pthread_mutex_unlock(&state->comm_mutex);
 
 exit:
 	dbgf("Stopping unit thread %d.", unit_state->id);

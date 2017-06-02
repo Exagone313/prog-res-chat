@@ -7,16 +7,25 @@
 typedef struct m_state m_state; // master thread
 typedef struct n_state n_state; // net thread
 typedef struct u_state u_state; // thread pool unit
+typedef struct message_task message_task;
+
+struct message_task {
+	int socket_id; // position in m_state.net.client, -1 if task not set
+	char buffer[MESSAGE_BUFFER_MAX_LENGTH];
+	int buffer_length;
+};
 
 struct n_state {
 	int connected; // number of connected clients
-	int exitpipe;
+	int exitpipe[2];
 	int client_server; // listening socket for clients
 	int promoter_server; // listening socket for promoters
 	int client[MAX_CLIENTS]; // connected client's sockets
 	int task[MAX_CLIENTS]; // net tasks e.g. close socket
 	char buffer[MAX_CLIENTS][SOCKET_BUFFER_MAX_LENGTH]; // received data, could be incomplete
 	int buffer_length[MAX_CLIENTS]; // actual lengths
+	message_task send_task[MAX_PENDING_MESSAGES];
+	message_task recv_task[MAX_PENDING_MESSAGES];
 };
 
 struct u_state {

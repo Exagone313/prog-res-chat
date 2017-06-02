@@ -19,10 +19,8 @@
 #define SOCKET_BUFFER_MAX_LENGTH 1024
 #define USER_ID_LENGTH 8
 /* to reserve memory instead of using memory allocation */
-#define MAX_PENDING_MESSAGES 10000
-
-#define N_STATE_TASK_NONE 0
-#define N_STATE_TASK_READ 1
+#define MAX_PENDING_MESSAGES 1000
+#define MESSAGE_BUFFER_MAX_LENGTH 512
 
 /* macro utils */
 

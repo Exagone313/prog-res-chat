@@ -15,4 +15,8 @@ void state_init(m_state *state) {
 		state->unit[i].master = state;
 		state->unit[i].id = i;
 	}
+	for(i = 0; i < MAX_PENDING_MESSAGES; i++) {
+		state->net.send_task[i].socket_id = -1;
+		state->net.recv_task[i].socket_id = -1;
+	}
 }
