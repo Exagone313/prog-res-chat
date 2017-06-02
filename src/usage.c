@@ -20,7 +20,7 @@ int print_usage(const int argc, const char **argv)
 	if(argc <= 5) {
 		if(argv[1][0] == '-')
 			goto usage;
-		if(argc > 1 && argv[1][0] != '_') {
+		if(argv[1][0] != '_') {
 			if(inet_pton(AF_INET, argv[1], &ia) == 0)
 				goto usage;
 			client_address = ia.s_addr;
