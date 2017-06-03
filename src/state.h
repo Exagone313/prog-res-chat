@@ -13,7 +13,7 @@ typedef struct notification_buffer notification_buffer;
 struct message_task {
 	int socket_id; // position in m_state.net.client, -1 if task not set
 	int close; // for send, 0 to send normally, 1 to send and close connection
-	char buffer[MESSAGE_BUFFER_MAX_LENGTH];
+	char buffer[MESSAGE_BUFFER_MAX_LENGTH + 3];
 	int buffer_length;
 };
 

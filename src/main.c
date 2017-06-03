@@ -49,6 +49,7 @@ int main(const int argc, const char **argv)
 	while(!quit)
 		pause();
 
+	dbg("main unpaused");
 	state.quit = 1;
 	write(state.net.unlockpipe[1], "q", 1);
 	pthread_join(master_thread, NULL);
