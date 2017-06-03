@@ -8,9 +8,17 @@ typedef struct m_state m_state; // master thread
 typedef struct n_state n_state; // net thread
 typedef struct u_state u_state; // thread pool unit
 typedef struct message_task message_task;
+typedef struct notification_buffer notification_buffer;
 
 struct message_task {
 	int socket_id; // position in m_state.net.client, -1 if task not set
+	int close; // for send, 0 to send normally, 1 to send and close connection
+	char buffer[MESSAGE_BUFFER_MAX_LENGTH];
+	int buffer_length;
+};
+
+struct notification_buffer {
+	int pointing; // number of notifications pointing to this buffer, 0 for unset
 	char buffer[MESSAGE_BUFFER_MAX_LENGTH];
 	int buffer_length;
 };
@@ -24,8 +32,8 @@ struct n_state {
 	int task[MAX_CLIENTS]; // net tasks e.g. close socket
 	char buffer[MAX_CLIENTS][SOCKET_BUFFER_MAX_LENGTH]; // received data, could be incomplete
 	int buffer_length[MAX_CLIENTS]; // actual lengths
-	message_task send_task[MAX_PENDING_MESSAGES];
-	message_task recv_task[MAX_PENDING_MESSAGES];
+	message_task send_pending[MAX_PENDING_MESSAGES];
+	message_task recv_pending[MAX_PENDING_MESSAGES];
 };
 
 struct u_state {
@@ -39,7 +47,9 @@ struct m_state {
 	int quit;
 	n_state net;
 	int user_socket_id[MAX_CLIENTS]; // for a user id, contains its position in net.client (-1 for disconnected)
-	char user_name[MAX_CLIENTS][8];
+	char user_name[MAX_CLIENTS][USER_ID_LENGTH];
+	notification_buffer *user_notification[MAX_CLIENTS][MAX_PENDING_NOTIFICATIONS]; // NULL for unset
+	notification_buffer user_notification_buffer[MAX_NOTIFICATION_BUFFERS];
 	pthread_mutex_t comm_mutex;
 	pthread_cond_t comm_cond;
 	u_state unit[THREAD_POOL_UNITS];

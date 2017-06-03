@@ -17,10 +17,16 @@
 /* id: 0-99 */
 #define MAX_CLIENTS 100
 #define SOCKET_BUFFER_MAX_LENGTH 1024
-#define USER_ID_LENGTH 8
 /* to reserve memory instead of using memory allocation */
 #define MAX_PENDING_MESSAGES 1000
 #define MESSAGE_BUFFER_MAX_LENGTH 512
+/* per user */
+#define MAX_PENDING_NOTIFICATIONS 100
+#define MAX_NOTIFICATION_BUFFERS MAX_CLIENTS * MAX_PENDING_NOTIFICATIONS
+
+/* protocol constants */
+
+#define USER_ID_LENGTH 8
 
 /* macro utils */
 
