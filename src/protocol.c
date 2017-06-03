@@ -3,70 +3,70 @@
 int message_type_to_int(char *msg)
 {
 	if(msg[0] == 'R' && msg[1] == 'E' && msg[2] == 'G' && msg[3] == 'I' && msg[4] == 'S')
-		return 0;
+		return REGIS;
 	if(msg[0] == 'W' && msg[1] == 'E' && msg[2] == 'L' && msg[3] == 'C' && msg[4] == 'O')
-		return 1;
+		return WELCO;
 	if(msg[0] == 'G' && msg[1] == 'O' && msg[2] == 'B' && msg[3] == 'Y' && msg[4] == 'E')
-		return 2;
+		return GOBYE;
 	if(msg[0] == 'C' && msg[1] == 'O' && msg[2] == 'N' && msg[3] == 'N' && msg[4] == 'E')
-		return 3;
+		return CONNE;
 	if(msg[0] == 'H' && msg[1] == 'E' && msg[2] == 'L' && msg[3] == 'L' && msg[4] == 'O')
-		return 4;
+		return HELLO;
 	if(msg[0] == 'F' && msg[1] == 'R' && msg[2] == 'I' && msg[3] == 'E' && msg[4] == '?')
-		return 5;
+		return FRIEX;
 	if(msg[0] == 'F' && msg[1] == 'R' && msg[2] == 'I' && msg[3] == 'E' && msg[4] == '>')
-		return 6;
+		return FRIEY;
 	if(msg[0] == 'F' && msg[1] == 'R' && msg[2] == 'I' && msg[3] == 'E' && msg[4] == '<')
-		return 7;
+		return FRIEZ;
 	if(msg[0] == 'M' && msg[1] == 'E' && msg[2] == 'S' && msg[3] == 'S' && msg[4] == '?')
-		return 8;
+		return MESSX;
 	if(msg[0] == 'M' && msg[1] == 'E' && msg[2] == 'N' && msg[3] == 'U' && msg[4] == 'M')
-		return 9;
+		return MENUM;
 	if(msg[0] == 'M' && msg[1] == 'E' && msg[2] == 'S' && msg[3] == 'S' && msg[4] == '>')
-		return 10;
+		return MESSY;
 	if(msg[0] == 'M' && msg[1] == 'E' && msg[2] == 'S' && msg[3] == 'S' && msg[4] == '<')
-		return 11;
+		return MESSZ;
 	if(msg[0] == 'F' && msg[1] == 'L' && msg[2] == 'O' && msg[3] == 'O' && msg[4] == '?')
-		return 12;
+		return FLOOX;
 	if(msg[0] == 'F' && msg[1] == 'L' && msg[2] == 'O' && msg[3] == 'O' && msg[4] == '>')
-		return 13;
+		return FLOOY;
 	if(msg[0] == 'L' && msg[1] == 'I' && msg[2] == 'S' && msg[3] == 'T' && msg[4] == '?')
-		return 14;
+		return LISTX;
 	if(msg[0] == 'R' && msg[1] == 'L' && msg[2] == 'I' && msg[3] == 'S' && msg[4] == 'T')
-		return 15;
+		return RLIST;
 	if(msg[0] == 'L' && msg[1] == 'I' && msg[2] == 'N' && msg[3] == 'U' && msg[4] == 'M')
-		return 16;
+		return LINUM;
 	if(msg[0] == 'C' && msg[1] == 'O' && msg[2] == 'N' && msg[3] == 'S' && msg[4] == 'U')
-		return 17;
+		return CONSU;
 	if(msg[0] == 'S' && msg[1] == 'S' && msg[2] == 'E' && msg[3] == 'M' && msg[4] == '>')
-		return 18;
+		return SSEMY;
 	if(msg[0] == 'M' && msg[1] == 'U' && msg[2] == 'N' && msg[3] == 'E' && msg[4] == 'M')
-		return 19;
+		return MUNEM;
 	if(msg[0] == 'O' && msg[1] == 'O' && msg[2] == 'L' && msg[3] == 'F' && msg[4] == '>')
-		return 20;
+		return OOLFY;
 	if(msg[0] == 'E' && msg[1] == 'I' && msg[2] == 'R' && msg[3] == 'F' && msg[4] == '>')
-		return 21;
+		return EIRFY;
 	if(msg[0] == 'O' && msg[1] == 'K' && msg[2] == 'I' && msg[3] == 'R' && msg[4] == 'F')
-		return 22;
+		return OKIRF;
 	if(msg[0] == 'N' && msg[1] == 'O' && msg[2] == 'K' && msg[3] == 'R' && msg[4] == 'F')
-		return 23;
+		return NOKRF;
 	if(msg[0] == 'A' && msg[1] == 'C' && msg[2] == 'K' && msg[3] == 'R' && msg[4] == 'F')
-		return 24;
+		return ACKRF;
 	if(msg[0] == 'F' && msg[1] == 'R' && msg[2] == 'I' && msg[3] == 'E' && msg[4] == 'N')
-		return 25;
+		return FRIEN;
 	if(msg[0] == 'N' && msg[1] == 'O' && msg[2] == 'F' && msg[3] == 'R' && msg[4] == 'I')
-		return 26;
+		return NOFRI;
 	if(msg[0] == 'L' && msg[1] == 'B' && msg[2] == 'U' && msg[3] == 'P' && msg[4] == '>')
-		return 27;
+		return LBUPY;
 	if(msg[0] == 'N' && msg[1] == 'O' && msg[2] == 'C' && msg[3] == 'O' && msg[4] == 'N')
-		return 28;
+		return NOCON;
 	if(msg[0] == 'I' && msg[1] == 'Q' && msg[2] == 'U' && msg[3] == 'I' && msg[4] == 'T')
-		return 29;
+		return IQUIT;
 	if(msg[0] == 'P' && msg[1] == 'U' && msg[2] == 'B' && msg[3] == 'L' && msg[4] == '?')
-		return 30;
+		return PUBLX;
 	if(msg[0] == 'P' && msg[1] == 'U' && msg[2] == 'B' && msg[3] == 'L' && msg[4] == '>')
-		return 31;
-	return 0;
+		return PUBLY;
+	return -1;
 }
 
 void int_to_message_type(int code, char *msg)
