@@ -5,9 +5,9 @@
 #include "usage.h"
 #include "constants.h"
 
-static long client_address = DEFAULT_BIND_ADDRESS;
+static unsigned long client_address = DEFAULT_BIND_ADDRESS;
 static int client_port = DEFAULT_CLIENT_BIND_PORT;
-static long promoter_address = DEFAULT_BIND_ADDRESS;
+static unsigned long promoter_address = DEFAULT_BIND_ADDRESS;
 static int promoter_port = DEFAULT_PROMOTER_BIND_PORT;
 
 int print_usage(const int argc, const char **argv)
@@ -65,7 +65,7 @@ usage:
 	return 1;
 }
 
-long getClientBindAddress()
+unsigned long getClientBindAddress()
 {
 	return client_address;
 }
@@ -74,7 +74,7 @@ int getClientBindPort() {
 	return client_port;
 }
 
-long getPromoterBindAddress()
+unsigned long getPromoterBindAddress()
 {
 	return promoter_address;
 }

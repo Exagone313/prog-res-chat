@@ -25,10 +25,11 @@ struct notification_buffer {
 
 struct n_state {
 	int connected; // number of connected clients
-	int exitpipe[2];
+	int unlockpipe[2];
 	int client_server; // listening socket for clients
 	int promoter_server; // listening socket for promoters
 	int client[MAX_CLIENTS]; // connected client's sockets
+	unsigned long client_addr[MAX_CLIENTS]; // its address
 	int task[MAX_CLIENTS]; // net tasks e.g. close socket
 	char buffer[MAX_CLIENTS][SOCKET_BUFFER_MAX_LENGTH]; // received data, could be incomplete
 	int buffer_length[MAX_CLIENTS]; // actual lengths
@@ -48,6 +49,9 @@ struct m_state {
 	n_state net;
 	int user_socket_id[MAX_CLIENTS]; // for a user id, contains its position in net.client (-1 for disconnected)
 	char user_name[MAX_CLIENTS][USER_ID_LENGTH];
+	int user_password[MAX_CLIENTS];
+	int user_port[MAX_CLIENTS]; // fixed at registration
+	unsigned long user_addr[MAX_CLIENTS]; // saved on connection
 	notification_buffer *user_notification[MAX_CLIENTS][MAX_PENDING_NOTIFICATIONS]; // NULL for unset
 	notification_buffer user_notification_buffer[MAX_NOTIFICATION_BUFFERS];
 	pthread_mutex_t comm_mutex;

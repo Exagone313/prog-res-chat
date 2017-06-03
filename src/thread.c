@@ -5,6 +5,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -74,7 +75,7 @@ void *master_thread_func(void *cls) // master thread
 		// TODO read communication
 		pthread_cond_wait(&state->comm_cond, &state->comm_mutex);
 		dbg("m signaled");
-	} while(0);
+	} while(1);
 	dbg("m unlock");
 	pthread_mutex_unlock(&state->comm_mutex);
 
@@ -82,7 +83,7 @@ quit:
 	state->quit = 1;
 
 	// stop net thread if necessary
-	close(state->net.exitpipe[1]);
+	write(state->net.unlockpipe[1], "q", 1);
 	pthread_join(net_thread, NULL);
 
 	// stop units
@@ -111,13 +112,13 @@ exit:
 
 static void create_fds(m_state *state, fd_set *readfds, fd_set *writefds)
 {
-	int i;
+	int i, j;
 
 	FD_ZERO(readfds);
 	FD_ZERO(writefds);
 
 	// add exit pipe
-	FD_SET(state->net.exitpipe[0], readfds);
+	FD_SET(state->net.unlockpipe[0], readfds);
 
 	// add server sockets
 	FD_SET(state->net.client_server, readfds);
@@ -130,11 +131,25 @@ static void create_fds(m_state *state, fd_set *readfds, fd_set *writefds)
 		else if(state->net.task[i] == 2) // TODO try to send messages until it blocks before setting this
 			FD_SET(state->net.client[i], writefds);
 		// close socket
-		else if(state->net.task[i] == 3) {
-			close(state->net.client[i]);
+		else if(state->net.task[i] == 3 && close(state->net.client[i]) == 0) {
+			dbgf("disconnect client %d", i);
 			state->net.connected--;
 			state->net.client[i] = 0;
 			state->net.task[i] = 0;
+			// if the client was logged in, manually disconnect the user
+			for(j = 0; j < MAX_CLIENTS; j++) { // TODO lock?
+				if(state->user_socket_id[j] == i) {
+					state->user_socket_id[j] = -1;
+					break;
+				}
+			}
+			// remove pending messages (both send and recv) for that user
+			for(j = 0; j < MAX_PENDING_MESSAGES; j++) {
+				if(state->net.send_pending[j].socket_id == i)
+					state->net.send_pending[j].socket_id = -1;
+				if(state->net.recv_pending[j].socket_id == i)
+					state->net.recv_pending[j].socket_id = -1;
+			}
 		}
 		// else 0 for closed/unset socket
 	}
@@ -142,6 +157,7 @@ static void create_fds(m_state *state, fd_set *readfds, fd_set *writefds)
 	// TODO watch promoter sockets
 }
 
+// returns the position for the first + of +++
 static int message_separator(const char *buffer, int buffer_length) {
 	int buffer_pos, separator_pos;
 
@@ -160,25 +176,38 @@ static int message_separator(const char *buffer, int buffer_length) {
 
 static void select_result(m_state *state, fd_set *readfds, fd_set *writefds)
 {
-	int i, sock, nbytes, r;
+	int i, j, sock, nbytes, r;
 	struct sockaddr_in sin;
 	socklen_t sinlen;
+
+	// activity on unlockpipe
+	if(FD_ISSET(state->net.unlockpipe[0], readfds)) {
+		dbg("unlockpipe read");
+		read(state->net.unlockpipe[0], &r, 1);
+	}
+
+	pthread_mutex_lock(&state->comm_mutex);
 
 	// activity on connected clients
 	for(i = 0; i < MAX_CLIENTS; i++) {
 		// send message (highest priority)
-		if(state->net.task[i] == 2 && FD_ISSET(state->net.client[i], writefds)) { // TODO
-			nbytes = 0;
-			//nbytes = write(state->net.client[i], state->net.buffer[i], state->net.buffer_length[i]); // FIXME need a second buffer!!! <--------
-			if(nbytes == 0)
-				state->net.task[i] = 3;
-			else if(nbytes < 0) {
-				if(errno != EAGAIN)
-					state->net.task[i] = 3;
-			}
-			else {
-				state->net.buffer_length[i] = 0; // FIXME
-				state->net.task[i] = 1;
+		if(state->net.task[i] == 2 && FD_ISSET(state->net.client[i], writefds)) {
+			for(j = 0; j < MAX_PENDING_MESSAGES; j++) {
+				if(state->net.send_pending[j].socket_id == i) {
+					nbytes = send(state->net.client[i], state->net.send_pending[j].buffer,
+							state->net.send_pending[j].buffer_length, MSG_NOSIGNAL);
+					dbgf("sent %d to %d", nbytes, i);
+					if(nbytes == 0)
+						state->net.task[i] = 3;
+					else if(nbytes < 0) {
+						if(errno != EAGAIN)
+							state->net.task[i] = 3;
+					}
+					else {
+						state->net.send_pending[j].socket_id = -1;
+						state->net.task[i] = 1;
+					}
+				}
 			}
 		}
 		// read message
@@ -186,6 +215,7 @@ static void select_result(m_state *state, fd_set *readfds, fd_set *writefds)
 			nbytes = read(state->net.client[i],
 					state->net.buffer[i] + state->net.buffer_length[i],
 					SOCKET_BUFFER_MAX_LENGTH - state->net.buffer_length[i]);
+			dbgf("read %d from %d", nbytes, i);
 			state->net.buffer_length[i] += nbytes;
 			if(nbytes == 0) // client closed socket
 				state->net.task[i] = 3;
@@ -195,13 +225,40 @@ static void select_result(m_state *state, fd_set *readfds, fd_set *writefds)
 				else
 					state->net.task[i] = 3;
 			}
-			else if(0) { // check if the buffer contains the message separator
-				r = message_separator(state->net.buffer[i], state->net.buffer_length[i]);
-				if(r >= 0) { // TODO create read task with save separator position, then memmove (with sizeof)
-				}
+			else { // check if the buffer contains the message separator
+				do {
+					r = message_separator(state->net.buffer[i], state->net.buffer_length[i]);
+					if(r >= 0) {
+						if(r > MESSAGE_BUFFER_MAX_LENGTH) // disconnect client if message is too large
+							state->net.task[i] = 3;
+						else {
+							if(r > 0) { // create read task only for not null messages
+								for(j = 0; j < MAX_PENDING_MESSAGES; j++) {
+									if(state->net.recv_pending[j].socket_id == -1)
+										break;
+								}
+								if(j == MAX_PENDING_MESSAGES) {
+									dbg("overwrite first message due to full queue");
+									j = 0;
+								}
+								dbgf("save message from buffer, length %d", r);
+								state->net.recv_pending[j].socket_id = i;
+								memcpy(state->net.recv_pending[j].buffer, state->net.buffer[i], r);
+								state->net.recv_pending[j].buffer_length = r;
+
+								// broadcast pool
+								dbg("signal pool");
+								pthread_cond_signal(&state->pool_cond);
+							}
+							memmove(state->net.buffer[i], state->net.buffer[i] + r + 3, state->net.buffer_length[i] - r - 3); // no need sizeof for char
+							state->net.buffer_length[i] -= r + 3;
+						}
+					} else
+						break;
+				} while(1);
+				if(state->net.buffer_length[i] == SOCKET_BUFFER_MAX_LENGTH) // didn't get a message with all these chars, close the socket
+					state->net.task[i] = 3;
 			}
-			else if(state->net.buffer_length[i] == SOCKET_BUFFER_MAX_LENGTH) // didn't get a message with all these chars, close the socket
-				state->net.task[i] = 3;
 		}
 	}
 
@@ -214,8 +271,10 @@ static void select_result(m_state *state, fd_set *readfds, fd_set *writefds)
 			for(i = 0; i < MAX_CLIENTS; i++) {
 				if(state->net.client[i] == 0) {
 					state->net.client[i] = sock;
+					state->net.client_addr[i] = sin.sin_addr.s_addr;
 					state->net.task[i] = 1;
 					state->net.connected++;
+					dbgf("Accept new client from %d:%d.", sin.sin_addr.s_addr, ntohs(sin.sin_port));
 					break;
 				}
 			}
@@ -223,9 +282,10 @@ static void select_result(m_state *state, fd_set *readfds, fd_set *writefds)
 				close(sock);
 				dbg("Cannot accept a new client.");
 			}
-			dbgf("Accept new client from %d:%d.", sin.sin_addr.s_addr, ntohs(sin.sin_port));
 		}
 	}
+
+	pthread_mutex_unlock(&state->comm_mutex);
 }
 
 void *net_thread_func(void *cls) // net thread
@@ -268,10 +328,11 @@ void *net_thread_func(void *cls) // net thread
 	do {
 		create_fds(state, &readfds, &writefds); // closes sockets when needed
 		select(FD_SETSIZE, &readfds, &writefds, NULL, NULL); // shouldn't have any error
-		if(state->quit) // TODO send messages before closing sockets
+		if(state->quit) { // TODO send messages before closing sockets
+			dbg("net got quit");
 			break;
+		}
 		select_result(state, &readfds, &writefds);
-		// TODO create task and cond_signal unit
 	} while(1);
 
 	for(i = 0; i < MAX_CLIENTS; i++) {
@@ -300,6 +361,7 @@ void *unit_thread_func(void *cls) // thread pool unit
 {
 	u_state *unit_state;
 	m_state *state;
+	int i;
 
 	unit_state = (u_state *) cls;
 	state = unit_state->master;
@@ -312,7 +374,19 @@ void *unit_thread_func(void *cls) // thread pool unit
 			pthread_mutex_unlock(&state->comm_mutex);
 			goto exit;
 		}
-		// TODO check for message
+
+		// check for message
+		for(i = 0; i < MAX_PENDING_MESSAGES; i++) {
+			if(state->net.recv_pending[i].socket_id >= 0) {
+				dbgf("read message from %d: %.*s in thread %d", state->net.recv_pending[i].socket_id,
+						state->net.recv_pending[i].buffer_length, state->net.recv_pending[i].buffer,
+						unit_state->id);
+				// TODO do something with the message
+				state->net.recv_pending[i].socket_id = -1;
+				break;
+			}
+		}
+
 		dbgf("unit wait %d.", unit_state->id);
 		pthread_cond_wait(&state->pool_cond, &state->comm_mutex);
 	} while(1);

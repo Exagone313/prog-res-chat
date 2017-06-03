@@ -30,12 +30,10 @@ int main(const int argc, const char **argv)
 		goto exit;
 	}
 
-	dbgf("m_state size: %zu\n", sizeof(state));
-
 	signal(SIGINT, signalHandler);
 	signal(SIGTERM, signalHandler);
 
-	if(pipe(state.net.exitpipe) < 0)
+	if(pipe(state.net.unlockpipe) < 0)
 		goto exit;
 	if(pthread_attr_init(&state.thread_attr))
 		goto exit;
@@ -52,7 +50,7 @@ int main(const int argc, const char **argv)
 		pause();
 
 	state.quit = 1;
-	close(state.net.exitpipe[1]);
+	write(state.net.unlockpipe[1], "q", 1);
 	pthread_join(master_thread, NULL);
 
 free:
