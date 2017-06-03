@@ -11,6 +11,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include "constants.h"
+#include "protocol.h"
 #include "state.h"
 #include "thread.h"
 #include "usage.h"

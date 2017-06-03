@@ -5,7 +5,8 @@ SRCDIR := src
 SRC := main.c \
 	usage.c \
 	state.c \
-	thread.c
+	thread.c \
+	protocol.c
 
 OBJ := $(addprefix $(SRCDIR)/,$(SRC:.c=.o))
 CFLAGS += -std=gnu11 -MMD -MP
