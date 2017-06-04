@@ -705,28 +705,29 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 				} while(0);
 				int_to_message_type(FRIEZ, send_buffer);
 				send_buffer_length = 5;
-				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 1);
+				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);
 				return;
 			case MESSX:
 				do {
 				} while(0);
 				int_to_message_type(MESSZ, send_buffer);
 				send_buffer_length = 5;
-				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 1);
+				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);
 				return;
 			case FLOOX:
+				dbg("FLOOX <<<<");
 				do {
 				} while(0);
 				int_to_message_type(FLOOY, send_buffer);
 				send_buffer_length = 5;
-				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 1);
+				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);
 				return;
 			case CONSU:
 				do {
 				} while(0);
 				int_to_message_type(NOCON, send_buffer);
 				send_buffer_length = 5;
-				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 1);
+				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);
 				return;
 			// default: ignore unknown messages
 		}
