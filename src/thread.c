@@ -668,7 +668,6 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 				dbgf("lock pool %d.", unit_state->id);
 				pthread_mutex_lock(&state->pool_mutex);
 
-				;
 				int_to_message_type(RLIST, send_buffer);
 				user_number = get_user_number(state->user_id);
 				send_buffer[5] = ' ';
@@ -679,7 +678,7 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 				send_buffer_length = 9;
 				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);
 
-				// FIXME potential problem if the user disconnect while receiving the list as it unlocks comm_mutex
+				// FIXME potential problem if the user disconnects while receiving the list as it unlocks comm_mutex
 				for(i = 0; i < user_number; i++) {
 					int_to_message_type(LINUM, send_buffer);
 					send_buffer[5] = ' ';
