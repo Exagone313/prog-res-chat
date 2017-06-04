@@ -715,7 +715,6 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);
 				return;
 			case FLOOX:
-				dbg("FLOOX <<<<");
 				do {
 				} while(0);
 				int_to_message_type(FLOOY, send_buffer);
