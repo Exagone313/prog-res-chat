@@ -424,6 +424,7 @@ void *unit_thread_func(void *cls) // thread pool unit
 	m_state *state;
 	int i, j, socket_id, s;
 	char read_buffer[MESSAGE_BUFFER_MAX_LENGTH] = {0};
+	int read_buffer_length;
 	char send_buffer[MESSAGE_BUFFER_MAX_LENGTH + 3] = {0};
 	int send_buffer_length;
 
@@ -446,7 +447,8 @@ void *unit_thread_func(void *cls) // thread pool unit
 						state->net.recv_pending[i].buffer_length, state->net.recv_pending[i].buffer,
 						unit_state->id);
 				// copy message
-				memcpy(read_buffer, state->net.recv_pending[i].buffer, state->net.recv_pending[i].buffer_length);
+				read_buffer_length = state->net.recv_pending[i].buffer_length;
+				memcpy(read_buffer, state->net.recv_pending[i].buffer, read_buffer_length);
 				socket_id = state->net.recv_pending[i].socket_id;
 				state->net.recv_pending[i].socket_id = -1;
 				// unlock
@@ -455,10 +457,10 @@ void *unit_thread_func(void *cls) // thread pool unit
 
 				// TODO read message
 				s = 1;
-				for(j = 0; j < state->net.recv_pending[i].buffer_length; j++)
-					send_buffer[state->net.recv_pending[i].buffer_length - j - 1] =
-						state->net.recv_pending[i].buffer[j];
-				send_buffer_length = state->net.recv_pending[i].buffer_length;
+				for(j = 0; j < read_buffer_length; j++)
+					send_buffer[read_buffer_length - j - 1] =
+						read_buffer[j];
+				send_buffer_length = read_buffer_length;
 
 				// lock again
 				dbgf("unit lock (msg) %d.", unit_state->id);
