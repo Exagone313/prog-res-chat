@@ -700,6 +700,34 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 				dbgf("unlock pool %d.", unit_state->id);
 				pthread_mutex_unlock(&state->pool_mutex);
 				return;
+			case FRIEX:
+				do {
+				} while(0);
+				int_to_message_type(FRIEZ, send_buffer);
+				send_buffer_length = 5;
+				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 1);
+				return;
+			case MESSX:
+				do {
+				} while(0);
+				int_to_message_type(MESSZ, send_buffer);
+				send_buffer_length = 5;
+				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 1);
+				return;
+			case FLOOX:
+				do {
+				} while(0);
+				int_to_message_type(FLOOY, send_buffer);
+				send_buffer_length = 5;
+				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 1);
+				return;
+			case CONSU:
+				do {
+				} while(0);
+				int_to_message_type(NOCON, send_buffer);
+				send_buffer_length = 5;
+				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 1);
+				return;
 			// default: ignore unknown messages
 		}
 }
