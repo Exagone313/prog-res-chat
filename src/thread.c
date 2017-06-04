@@ -490,7 +490,7 @@ static int user_password_to_int(char *user_password) // the 2 characters must be
 
 static void read_message(u_state *unit_state, int socket_id, char *read_buffer, int read_buffer_length)
 {
-	int i, send_buffer_length, port, user_pos;
+	int i, send_buffer_length, port, user_pos, message_type;
 	char send_buffer[MESSAGE_BUFFER_MAX_LENGTH + 3] = {0};
 	m_state *state;
 
@@ -499,138 +499,157 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 
 	state = unit_state->master;
 
-	// TODO if logged: one switch block, else: another
-	switch(message_type_to_int(read_buffer)) {
-		case REGIS: // note: connected directly after successful registration
-			do {
-				/*
-				 * check length
-				 * check spaces
-				 * check that id is alphanumeric
-				 * check that port is valid
-				 * check that id is not already registered
-				 * check that port is not taken, convert password to int
-				 * login
-				 */
-				if(read_buffer_length != 22) // 5+1+8+1+4+1+2
-					break;
-				if(read_buffer[5] != ' ' || read_buffer[14] != ' ' || read_buffer[19] != ' ')
-					break;
-				if(malformed_id(read_buffer + 6))
-					break;
-				port = read_port(read_buffer + 15);
-				if(port == 0)
-					break;
+	message_type = message_type_to_int(read_buffer);
 
-				dbgf("received REGIS id=%.*s port=%d by %d", 8, read_buffer + 6, port, unit_state->id);
+	dbgf("lock pool %d.", unit_state->id);
+	pthread_mutex_lock(&state->pool_mutex);
 
-				dbgf("lock pool %d.", unit_state->id);
-				pthread_mutex_lock(&state->pool_mutex);
-
-				user_pos = get_user_pos(read_buffer + 6, state->user_id);
-				if(user_pos == -1) {
-					dbg("all user slots are taken");
-					break;
-				}
-				if(state->user_id[user_pos][0] != '\0') {
-					dbgf("user id=%.*s already registered", 8, read_buffer + 6);
-					break;
-				}
-
-				// register
-				memcpy(state->user_id[user_pos], read_buffer + 6, 8);
-				state->user_password[user_pos] = user_password_to_int(read_buffer + 20);
-				state->user_port[user_pos] = port;
-				// FIXME vulnerability if the client disconnects before that message is read, until he reconnects
-				state->user_addr[user_pos] = state->net.client_addr[socket_id];
-
-				// login
-				// FIXME vulnerability
-				state->user_socket_id[user_pos] = socket_id;
-				dbgf("logged on user pos %d", user_pos);
-
-				dbgf("unlock pool %d.", unit_state->id);
-				pthread_mutex_unlock(&state->pool_mutex);
-
-				int_to_message_type(WELCO, send_buffer);
-				send_buffer_length = 5;
-				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);
-				return;
-			} while(0);
-			int_to_message_type(GOBYE, send_buffer);
-			send_buffer_length = 5;
-			write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 1);
-			return;
-		case CONNE:
-			do {
-				/*
-				 * check spaces
-				 * check that id is alphanumeric and is registered
-				 * convert password to int and check that password matches
-				 * login
-				 */
-				if(read_buffer_length != 17) // 5+1+8+1+2
-					break;
-				if(read_buffer[5] != ' ' || read_buffer[14] != ' ')
-					break;
-				if(malformed_id(read_buffer + 6))
-					break;
-
-				dbgf("lock pool %d.", unit_state->id);
-				pthread_mutex_lock(&state->pool_mutex);
-
-				user_pos = get_user_pos(read_buffer + 6, state->user_id);
-				if(user_pos == -1 || state->user_id[user_pos][0] == '\0') {
-					dbg("user id not found");
-					pthread_mutex_unlock(&state->pool_mutex);
-					break;
-				}
-
-				if(user_password_to_int(read_buffer + 15) != state->user_password[user_pos]) {
-					dbg("incorrect password");
-					pthread_mutex_unlock(&state->pool_mutex);
-					break;
-				}
-
-				// login
-				// FIXME vulnerability same as in REGIS
-				state->user_socket_id[user_pos] = socket_id;
-				dbgf("logged on user pos %d", user_pos);
-
-				dbgf("unlock pool %d.", unit_state->id);
-				pthread_mutex_unlock(&state->pool_mutex);
-
-				int_to_message_type(HELLO, send_buffer);
-				send_buffer_length = 5;
-				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);
-				return;
-			} while(0);
-			int_to_message_type(GOBYE, send_buffer);
-			send_buffer_length = 5;
-			write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 1);
-			return;
-		case IQUIT:
-			dbgf("lock pool %d.", unit_state->id);
-			pthread_mutex_lock(&state->pool_mutex);
-
-			// check if logged in
-			for(i = 0; i < MAX_CLIENTS; i++) {
-				if(state->user_socket_id[i] == socket_id) {
-					dbgf("disconnect user pos %d", i);
-					state->user_socket_id[i] = -1;
-					break;
-				}
-			}
-
-			dbgf("unlock pool %d.", unit_state->id);
-			pthread_mutex_unlock(&state->pool_mutex);
-
-			int_to_message_type(GOBYE, send_buffer);
-			send_buffer_length = 5;
-			write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 1);
-			return;
-		// default: ignore unknown messages
+	// check if logged in
+	user_pos = -1;
+	for(i = 0; i < MAX_CLIENTS; i++) {
+		if(state->user_socket_id[i] == socket_id) {
+			//dbgf("disconnect user pos %d", i);
+			//state->user_socket_id[i] = -1;
+			user_pos = i;
+			break;
+		}
 	}
+
+	// check IQUIT
+	if(message_type == IQUIT) {
+		if(user_pos != -1) { // logged in
+			dbgf("disconnect user pos %d", i);
+			state->user_socket_id[i] = -1;
+		}
+
+		dbgf("unlock pool %d.", unit_state->id);
+		pthread_mutex_unlock(&state->pool_mutex);
+
+		int_to_message_type(GOBYE, send_buffer);
+		send_buffer_length = 5;
+		write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 1);
+		return;
+	}
+
+	dbgf("unlock pool %d.", unit_state->id);
+	pthread_mutex_unlock(&state->pool_mutex);
+
+	if(user_pos == -1) // not logged in
+		switch(message_type) {
+			case REGIS: // note: connected directly after successful registration
+				do {
+					/*
+					 * check length
+					 * check spaces
+					 * check that id is alphanumeric
+					 * check that port is valid
+					 * check that id is not already registered
+					 * check that port is not taken, convert password to int
+					 * login
+					 */
+					if(read_buffer_length != 22) // 5+1+8+1+4+1+2
+						break;
+					if(read_buffer[5] != ' ' || read_buffer[14] != ' ' || read_buffer[19] != ' ')
+						break;
+					if(malformed_id(read_buffer + 6))
+						break;
+					port = read_port(read_buffer + 15);
+					if(port == 0)
+						break;
+
+					dbgf("received REGIS id=%.*s port=%d by %d", 8, read_buffer + 6, port, unit_state->id);
+
+					dbgf("lock pool %d.", unit_state->id);
+					pthread_mutex_lock(&state->pool_mutex);
+
+					user_pos = get_user_pos(read_buffer + 6, state->user_id);
+					if(user_pos == -1) {
+						dbg("all user slots are taken");
+						break;
+					}
+					if(state->user_id[user_pos][0] != '\0') {
+						dbgf("user id=%.*s already registered", 8, read_buffer + 6);
+						break;
+					}
+
+					// register
+					memcpy(state->user_id[user_pos], read_buffer + 6, 8);
+					state->user_password[user_pos] = user_password_to_int(read_buffer + 20);
+					state->user_port[user_pos] = port;
+					// FIXME vulnerability if the client disconnects before that message is read, until he reconnects
+					state->user_addr[user_pos] = state->net.client_addr[socket_id];
+
+					// login
+					// FIXME vulnerability
+					state->user_socket_id[user_pos] = socket_id;
+					dbgf("logged on user pos %d", user_pos);
+
+					dbgf("unlock pool %d.", unit_state->id);
+					pthread_mutex_unlock(&state->pool_mutex);
+
+					int_to_message_type(WELCO, send_buffer);
+					send_buffer_length = 5;
+					write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);
+					return;
+				} while(0);
+				int_to_message_type(GOBYE, send_buffer);
+				send_buffer_length = 5;
+				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 1);
+				return;
+			case CONNE:
+				do {
+					/*
+					 * check spaces
+					 * check that id is alphanumeric and is registered
+					 * convert password to int and check that password matches
+					 * login
+					 */
+					if(read_buffer_length != 17) // 5+1+8+1+2
+						break;
+					if(read_buffer[5] != ' ' || read_buffer[14] != ' ')
+						break;
+					if(malformed_id(read_buffer + 6))
+						break;
+
+					dbgf("lock pool %d.", unit_state->id);
+					pthread_mutex_lock(&state->pool_mutex);
+
+					user_pos = get_user_pos(read_buffer + 6, state->user_id);
+					if(user_pos == -1 || state->user_id[user_pos][0] == '\0') {
+						dbg("user id not found");
+						pthread_mutex_unlock(&state->pool_mutex);
+						break;
+					}
+
+					if(user_password_to_int(read_buffer + 15) != state->user_password[user_pos]) {
+						dbg("incorrect password");
+						pthread_mutex_unlock(&state->pool_mutex);
+						break;
+					}
+
+					// login
+					// FIXME vulnerability same as in REGIS
+					state->user_socket_id[user_pos] = socket_id;
+					dbgf("logged on user pos %d", user_pos);
+
+					dbgf("unlock pool %d.", unit_state->id);
+					pthread_mutex_unlock(&state->pool_mutex);
+
+					int_to_message_type(HELLO, send_buffer);
+					send_buffer_length = 5;
+					write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);
+					return;
+				} while(0);
+				int_to_message_type(GOBYE, send_buffer);
+				send_buffer_length = 5;
+				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 1);
+				return;
+			// default: ignore unknown messages
+		}
+	else
+		switch(message_type) {
+			// default: ignore unknown messages
+		}
 }
 
 void *unit_thread_func(void *cls) // thread pool unit
