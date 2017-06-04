@@ -268,7 +268,7 @@ static void select_result(m_state *state, fd_set *readfds)
 				do {
 					r = message_separator(state->net.buffer[i], state->net.buffer_length[i]);
 					if(r >= 0) {
-						if(r > MESSAGE_BUFFER_MAX_LENGTH) { // disconnect client if message is too large
+						if(r >= MESSAGE_BUFFER_MAX_LENGTH) { // disconnect client if message is too large
 							dbgf("client %d sent a too large message, will close socket", i);
 							state->net.task[i] = 3;
 						} else {
@@ -296,7 +296,7 @@ static void select_result(m_state *state, fd_set *readfds)
 					} else
 						break;
 				} while(1);
-				if(state->net.buffer_length[i] == SOCKET_BUFFER_MAX_LENGTH) // didn't get a message with all these chars, close the socket
+				if(state->net.buffer_length[i] >= SOCKET_BUFFER_MAX_LENGTH) // didn't get a message with all these chars, close the socket
 					state->net.task[i] = 3;
 			}
 		}
@@ -453,7 +453,7 @@ static int malformed_id(char *user_id) // the 8 characters must be set
 
 	for(i = 0; i < USER_ID_LENGTH; i++) {
 		ch = user_id[i];
-		if(ch < 49 || (ch > 57 && ch < 65) || (ch > 90 && ch < 97) || ch > 122)
+		if(ch < 48 || (ch > 57 && ch < 65) || (ch > 90 && ch < 97) || ch > 122)
 			return 1;
 	}
 	return 0;
@@ -483,6 +483,18 @@ static int get_user_pos(char *user_id, char list[MAX_CLIENTS][USER_ID_LENGTH]) /
 	return -1;
 }
 
+static int get_user_number(char list[MAX_CLIENTS][USER_ID_LENGTH]) // pool mutex must be locked
+{
+	int i;
+
+	for(i = 0; i < MAX_CLIENTS; i++) {
+		if(list[i][0] == '\0')
+			return i;
+	}
+
+	return MAX_CLIENTS;
+}
+
 static int user_password_to_int(char *user_password) // the 2 characters must be set
 {
 	return ((unsigned) user_password[0] << 8) + (unsigned) user_password[1];
@@ -490,7 +502,7 @@ static int user_password_to_int(char *user_password) // the 2 characters must be
 
 static void read_message(u_state *unit_state, int socket_id, char *read_buffer, int read_buffer_length)
 {
-	int i, send_buffer_length, port, user_pos, message_type;
+	int i, send_buffer_length, message_type, port, user_pos, user_number;
 	char send_buffer[MESSAGE_BUFFER_MAX_LENGTH + 3] = {0};
 	m_state *state;
 
@@ -648,6 +660,37 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 		}
 	else
 		switch(message_type) {
+			case LISTX: // user list
+				/*
+				 * RLIST NNN (char)
+				 * LINUM 12345678
+				 */
+				dbgf("lock pool %d.", unit_state->id);
+				pthread_mutex_lock(&state->pool_mutex);
+
+				;
+				int_to_message_type(RLIST, send_buffer);
+				user_number = get_user_number(state->user_id);
+				send_buffer[5] = ' ';
+				send_buffer[6] = '0' + (user_number / 100) % 10;
+				send_buffer[7] = '0' + (user_number % 100) / 10;
+				send_buffer[8] = '0' + user_number % 10;
+
+				send_buffer_length = 9;
+				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);
+
+				// FIXME potential problem if the user disconnect while receiving the list as it unlocks comm_mutex
+				for(i = 0; i < user_number; i++) {
+					int_to_message_type(LINUM, send_buffer);
+					send_buffer[5] = ' ';
+					memcpy(send_buffer + 6, state->user_id[i], 8);
+					send_buffer_length = 14;
+					write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);
+				}
+
+				dbgf("unlock pool %d.", unit_state->id);
+				pthread_mutex_unlock(&state->pool_mutex);
+				return;
 			// default: ignore unknown messages
 		}
 }
