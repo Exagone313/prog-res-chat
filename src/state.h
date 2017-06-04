@@ -54,6 +54,8 @@ struct m_state {
 	unsigned long user_addr[MAX_CLIENTS]; // saved on connection
 	notification_buffer *user_notification[MAX_CLIENTS][MAX_PENDING_NOTIFICATIONS]; // NULL for unset
 	notification_buffer user_notification_buffer[MAX_NOTIFICATION_BUFFERS];
+	int friend_request[MAX_CLIENTS][MAX_CLIENTS]; // requests are ordered
+	int user_friend[MAX_CLIENTS][MAX_CLIENTS]; // 1 if friend, 0 if not, both ways are set
 	pthread_mutex_t comm_mutex;
 	pthread_cond_t comm_cond;
 	u_state unit[THREAD_POOL_UNITS];

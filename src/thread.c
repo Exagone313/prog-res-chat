@@ -512,7 +512,7 @@ static int user_password_to_int(char *user_password) // the 2 characters must be
 
 static void read_message(u_state *unit_state, int socket_id, char *read_buffer, int read_buffer_length)
 {
-	int i, send_buffer_length, message_type, port, user_pos, user_number;
+	int i, j, send_buffer_length, message_type, port, user_pos, user_number, user_id;
 	char send_buffer[MESSAGE_BUFFER_MAX_LENGTH + 3] = {0};
 	m_state *state;
 
@@ -527,19 +527,17 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 	pthread_mutex_lock(&state->pool_mutex);
 
 	// check if logged in
-	user_pos = -1;
+	user_id = -1;
 	for(i = 0; i < MAX_CLIENTS; i++) {
 		if(state->user_socket_id[i] == socket_id) {
-			//dbgf("disconnect user pos %d", i);
-			//state->user_socket_id[i] = -1;
-			user_pos = i;
+			user_id = i;
 			break;
 		}
 	}
 
 	// check IQUIT
 	if(message_type == IQUIT) {
-		if(user_pos != -1) { // logged in
+		if(user_id != -1) { // logged in
 			dbgf("disconnect user pos %d", i);
 			state->user_socket_id[i] = -1;
 		}
@@ -556,7 +554,7 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 	dbgf("unlock pool %d.", unit_state->id);
 	pthread_mutex_unlock(&state->pool_mutex);
 
-	if(user_pos == -1) // not logged in
+	if(user_id == -1) // not logged in
 		switch(message_type) {
 			case REGIS: // note: connected directly after successful registration
 				do {
@@ -621,6 +619,7 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 			case CONNE:
 				do {
 					/*
+					 * check length
 					 * check spaces
 					 * check that id is alphanumeric and is registered
 					 * convert password to int and check that password matches
@@ -702,6 +701,94 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 				return;
 			case FRIEX:
 				do {
+					/*
+					 * check length
+					 * check space
+					 * check that id is alphanumeric and is registered and not current id
+					 * check that the user is not already a friend
+					 * check that there is no pending request made by the current user to that user
+					 */
+					if(read_buffer_length != 14) // 5+1+8
+						break;
+					if(read_buffer[5] != ' ')
+						break;
+					if(malformed_id(read_buffer + 6))
+						break;
+
+					dbgf("lock pool %d.", unit_state->id);
+					pthread_mutex_lock(&state->pool_mutex);
+
+					user_pos = get_user_pos(read_buffer + 6, state->user_id);
+					if(user_pos == -1 || state->user_id[user_pos][0] == '\0' || user_pos == user_id) {
+						dbg("user id not found or incorrect");
+						pthread_mutex_unlock(&state->pool_mutex);
+						break;
+					}
+
+					// check not friend
+					if(state->user_friend[user_pos][user_id]) {
+						dbg("already friends");
+						pthread_mutex_unlock(&state->pool_mutex);
+						break;
+					}
+
+					// check not already pending
+					for(i = 0; i < MAX_CLIENTS; i++) {
+						if(state->friend_request[user_pos][i] == -1
+								|| state->friend_request[user_pos][i] == user_id)
+							break;
+					}
+					if(i == MAX_CLIENTS || state->friend_request[user_pos][i] == user_id) {
+						dbg("too many friend requests (how is that possible) or already pending request");
+						pthread_mutex_unlock(&state->pool_mutex);
+						break;
+					}
+
+					// get next notification buffer available id
+					for(i = 0; i < MAX_NOTIFICATION_BUFFERS; i++) {
+						if(state->user_notification_buffer[i].pointing == 0)
+							break;
+					}
+					if(i == MAX_NOTIFICATION_BUFFERS) {
+						dbg("too many global notifications");
+						pthread_mutex_unlock(&state->pool_mutex);
+						break;
+					}
+
+					// get next user notification available id
+					for(j = 0; j < MAX_PENDING_NOTIFICATIONS; j++) {
+						if(state->user_notification[user_pos][j] == NULL)
+							break;
+					}
+					if(j == MAX_PENDING_NOTIFICATIONS) {
+						dbg("too many user notifications");
+						pthread_mutex_unlock(&state->pool_mutex);
+						break;
+					}
+
+					// save notification
+					state->user_notification_buffer[i].pointing = 1;
+					state->user_notification_buffer[i].buffer_length = 14;
+					int_to_message_type(EIRFY, state->user_notification_buffer[i].buffer);
+					state->user_notification_buffer[i].buffer[5] = ' ';
+					memcpy(state->user_notification_buffer[i].buffer + 6, state->user_id[user_id], 8);
+
+					// save notification pointer
+					state->user_notification[user_pos][j] = state->user_notification_buffer
+						+ i * sizeof(*state->user_notification_buffer);
+
+					// add friend request
+					state->friend_request[user_pos][i] = user_id;
+
+					dbgf("unlock pool %d.", unit_state->id);
+					pthread_mutex_unlock(&state->pool_mutex);
+
+					int_to_message_type(FRIEY, send_buffer);
+					send_buffer_length = 5;
+					write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);
+
+					// TODO udp notif
+					return;
 				} while(0);
 				int_to_message_type(FRIEZ, send_buffer);
 				send_buffer_length = 5;
@@ -723,8 +810,66 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 				return;
 			case CONSU:
 				do {
+					dbgf("lock pool %d.", unit_state->id);
+					pthread_mutex_lock(&state->pool_mutex);
+
+					if(state->user_notification[user_id][0] == NULL) {
+						dbg("no notification");
+						pthread_mutex_unlock(&state->pool_mutex);
+						break;
+					}
+
+					for(i = 1; i < MAX_PENDING_NOTIFICATIONS - 1; i++) {
+						if(state->user_notification[user_id][0] == NULL)
+							break;
+					}
+
+					(*state->user_notification[user_id][0]).pointing--;
+					memcpy(send_buffer, (*state->user_notification[user_id][0]).buffer,
+							(*state->user_notification[user_id][0]).buffer_length);
+					memmove(state->user_notification[user_id],
+							state->user_notification[user_id] + sizeof(*state->user_notification[user_id]),
+							i);
+					state->user_notification[user_id][i - 1] = NULL;
+
+					dbgf("unlock pool %d.", unit_state->id);
+					pthread_mutex_unlock(&state->pool_mutex);
+
+					write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);
+					return;
 				} while(0);
 				int_to_message_type(NOCON, send_buffer);
+				send_buffer_length = 5;
+				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);
+				return;
+			case OKIRF:
+			case NOKRF:
+				do {
+					dbgf("lock pool %d.", unit_state->id);
+					pthread_mutex_lock(&state->pool_mutex);
+
+					if(state->friend_request[user_id][0] == -1) {
+						dbg("no friend request");
+						pthread_mutex_unlock(&state->pool_mutex);
+						break;
+					}
+
+					if(message_type == OKIRF) { // make them friends
+						state->user_friend[user_id][state->friend_request[user_id][0]] = 1;
+						state->user_friend[state->friend_request[user_id][0]][user_id] = 1;
+						// TODO udp notification
+					}
+					// TODO else udp notification
+
+					// erase friend request
+					memmove(state->friend_request[user_id], state->friend_request[user_id] + 1,
+							MAX_CLIENTS - 1);
+					state->friend_request[user_id][MAX_CLIENTS - 1] = -1;
+
+					dbgf("unlock pool %d.", unit_state->id);
+					pthread_mutex_unlock(&state->pool_mutex);
+				} while(0);
+				int_to_message_type(ACKRF, send_buffer);
 				send_buffer_length = 5;
 				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);
 				return;
