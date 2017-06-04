@@ -418,26 +418,70 @@ clean:
 	pthread_exit(NULL);
 }
 
-static int read_message(int socket_id, char *read_buffer, int read_buffer_length,
-		char *send_buffer, int *send_buffer_length)
+static void write_message(u_state *unit_state, int socket_id, char *send_buffer, int *send_buffer_length)
 {
-	int i;
+	int i, j;
+	m_state *state;
+
+	state = unit_state->master;
+
+	dbgf("lock write message %d", unit_state->id);
+	pthread_mutex_lock(&state->comm_mutex);
+
+	for(i = 0; i < MAX_PENDING_MESSAGES; i++) {
+		if(state->net.send_pending[i].socket_id == -1)
+			break;
+	}
+	if(i == MAX_PENDING_MESSAGES) {
+		dbg("overwrite first message due to full send queue");
+		i = 0;
+	}
+
+	dbgf("add send task id %d by %d to %d: %.*s", i, unit_state->id, socket_id,
+			*send_buffer_length, send_buffer);
+
+	// add separator at the end
+	for(j = 0; j < 3; j++) {
+		send_buffer[*send_buffer_length + j] = '+';
+	}
+	*send_buffer_length += 3;
+
+	state->net.task[socket_id] = 2;
+	state->net.send_pending[i].socket_id = socket_id;
+	state->net.send_pending[i].buffer_length = *send_buffer_length;
+	dbgf("len=%d+3", *send_buffer_length);
+	memcpy(state->net.send_pending[i].buffer, send_buffer, *send_buffer_length);
+
+	dbgf("queue send task %d by %d: %.*s (%d)", i, socket_id,
+			state->net.send_pending[i].buffer_length, state->net.send_pending[i].buffer,
+			state->net.send_pending[i].buffer_length);
+
+	dbgf("unlock write message %d", unit_state->id);
+	pthread_mutex_unlock(&state->comm_mutex);
+}
+
+static void read_message(u_state *unit_state, int socket_id, char *read_buffer, int read_buffer_length)
+{
+	int i, send_buffer_length;
+	char send_buffer[MESSAGE_BUFFER_MAX_LENGTH + 3] = {0};
+	m_state *state;
+
+	state = unit_state->master;
 
 	for(i = 0; i < read_buffer_length; i++)
 		send_buffer[read_buffer_length - i - 1] = read_buffer[i];
-	*send_buffer_length = read_buffer_length;
-	return 1;
+	send_buffer_length = read_buffer_length;
+
+	write_message(unit_state, socket_id, send_buffer, &send_buffer_length);
 }
 
 void *unit_thread_func(void *cls) // thread pool unit
 {
 	u_state *unit_state;
 	m_state *state;
-	int i, j, socket_id, s;
+	int i, socket_id;
 	char read_buffer[MESSAGE_BUFFER_MAX_LENGTH] = {0};
 	int read_buffer_length;
-	char send_buffer[MESSAGE_BUFFER_MAX_LENGTH + 3] = {0};
-	int send_buffer_length;
 
 	unit_state = (u_state *) cls;
 	state = unit_state->master;
@@ -466,41 +510,13 @@ void *unit_thread_func(void *cls) // thread pool unit
 				dbgf("unit unlock (msg) %d.", unit_state->id);
 				pthread_mutex_unlock(&state->comm_mutex);
 
-				// TODO read message
-				s = read_message(socket_id, read_buffer, read_buffer_length, send_buffer, &send_buffer_length);
+				// read (and write) messages
+				read_message(unit_state, socket_id, read_buffer, read_buffer_length);
 
 				// lock again
 				dbgf("unit lock (msg) %d.", unit_state->id);
 				pthread_mutex_lock(&state->comm_mutex);
 
-				// send message if needed
-				if(s) {
-					for(j = 0; j < MAX_PENDING_MESSAGES; j++) {
-						if(state->net.send_pending[j].socket_id == -1)
-							break;
-					}
-					if(j == MAX_PENDING_MESSAGES) {
-						dbg("overwrite first message due to full send queue");
-						j = 0;
-					}
-					dbgf("add send task id %d by %d to %d: %.*s", j, unit_state->id, socket_id,
-							send_buffer_length, send_buffer);
-					// add seperator at the end
-					for(s = 0; s < 3; s++) {
-						send_buffer[send_buffer_length + s] = '+';
-					}
-					send_buffer_length += 3;
-					state->net.task[socket_id] = 2;
-					state->net.send_pending[j].socket_id = socket_id;
-					state->net.send_pending[j].buffer_length = send_buffer_length;
-					dbgf("len=%d+3", send_buffer_length);
-					memcpy(state->net.send_pending[j].buffer, send_buffer, send_buffer_length);
-					dbgf("queue send task %d by %d: %.*s (%d)", j, socket_id,
-							state->net.send_pending[j].buffer_length, state->net.send_pending[j].buffer,
-							state->net.send_pending[j].buffer_length);
-					// TODO may need to set send_buffer_length to 0
-					s = 0;
-				}
 				break;
 			}
 		}
