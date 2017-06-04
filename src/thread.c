@@ -418,6 +418,17 @@ clean:
 	pthread_exit(NULL);
 }
 
+static int read_message(int socket_id, char *read_buffer, int read_buffer_length,
+		char *send_buffer, int *send_buffer_length)
+{
+	int i;
+
+	for(i = 0; i < read_buffer_length; i++)
+		send_buffer[read_buffer_length - i - 1] = read_buffer[i];
+	*send_buffer_length = read_buffer_length;
+	return 1;
+}
+
 void *unit_thread_func(void *cls) // thread pool unit
 {
 	u_state *unit_state;
@@ -456,11 +467,7 @@ void *unit_thread_func(void *cls) // thread pool unit
 				pthread_mutex_unlock(&state->comm_mutex);
 
 				// TODO read message
-				s = 1;
-				for(j = 0; j < read_buffer_length; j++)
-					send_buffer[read_buffer_length - j - 1] =
-						read_buffer[j];
-				send_buffer_length = read_buffer_length;
+				s = read_message(socket_id, read_buffer, read_buffer_length, send_buffer, &send_buffer_length);
 
 				// lock again
 				dbgf("unit lock (msg) %d.", unit_state->id);
