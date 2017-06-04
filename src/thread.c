@@ -194,19 +194,30 @@ static void create_fds(m_state *state, fd_set *readfds, fd_set *writefds)
 			state->net.connected--;
 			state->net.client[i] = 0;
 			state->net.task[i] = 0;
+			state->net.buffer_length[i] = 0; // empty buffer
+
 			// if the client was logged in, manually disconnect the user
-			for(j = 0; j < MAX_CLIENTS; j++) { // TODO lock?
+			for(j = 0; j < MAX_CLIENTS; j++) {
 				if(state->user_socket_id[j] == i) {
+					pthread_mutex_lock(&state->pool_mutex);
+
 					state->user_socket_id[j] = -1;
+
+					pthread_mutex_unlock(&state->pool_mutex);
 					break;
 				}
 			}
+
 			// remove pending messages (both send and recv) for that user
 			for(j = 0; j < MAX_PENDING_MESSAGES; j++) {
-				if(state->net.send_pending[j].socket_id == i)
+				if(state->net.send_pending[j].socket_id == i) {
 					state->net.send_pending[j].socket_id = -1;
-				if(state->net.recv_pending[j].socket_id == i)
+					state->net.send_pending[j].buffer_length = 0;
+				}
+				if(state->net.recv_pending[j].socket_id == i) {
 					state->net.recv_pending[j].socket_id = -1;
+					state->net.recv_pending[j].buffer_length = 0;
+				}
 			}
 		}
 		// else 0 for closed/unset socket
@@ -725,6 +736,7 @@ void *unit_thread_func(void *cls) // thread pool unit
 				memcpy(read_buffer, state->net.recv_pending[i].buffer, read_buffer_length);
 				socket_id = state->net.recv_pending[i].socket_id;
 				state->net.recv_pending[i].socket_id = -1;
+				state->net.recv_pending[i].buffer_length = 0;
 				// unlock
 				dbgf("unit unlock (msg) %d.", unit_state->id);
 				pthread_mutex_unlock(&state->comm_mutex);
