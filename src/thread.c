@@ -261,7 +261,6 @@ static void select_result(m_state *state, fd_set *readfds)
 	for(i = 0; i < MAX_CLIENTS; i++) {
 		// read message
 		if(state->net.task[i] == 1 && FD_ISSET(state->net.client[i], readfds)) {
-			// FIXME deadlock somewhere when receiving a message too long
 			nbytes = read(state->net.client[i],
 					state->net.buffer[i] + state->net.buffer_length[i],
 					SOCKET_BUFFER_MAX_LENGTH - state->net.buffer_length[i]);
