@@ -48,7 +48,7 @@ struct m_state {
 	int quit;
 	n_state net;
 	int user_socket_id[MAX_CLIENTS]; // for a user id, contains its position in net.client (-1 for disconnected)
-	char user_name[MAX_CLIENTS][USER_ID_LENGTH];
+	char user_id[MAX_CLIENTS][USER_ID_LENGTH];
 	int user_password[MAX_CLIENTS];
 	int user_port[MAX_CLIENTS]; // fixed at registration
 	unsigned long user_addr[MAX_CLIENTS]; // saved on connection

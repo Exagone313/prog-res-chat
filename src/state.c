@@ -13,6 +13,7 @@ void state_init(m_state *state) {
 		for(j = 0; j < MAX_PENDING_NOTIFICATIONS; j++) {
 			state->user_notification[i][j] = NULL;
 		}
+		state->user_id[i][0] = '\0';
 	}
 	for(i = 0; i < THREAD_POOL_UNITS; i++) {
 		state->unit[i].master = state;

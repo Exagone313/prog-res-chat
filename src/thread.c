@@ -5,6 +5,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/select.h>
 #include <sys/socket.h>
@@ -169,17 +170,20 @@ static void create_fds(m_state *state, fd_set *readfds, fd_set *writefds)
 						}
 					}
 					else {
-						dbgf("cleared task %d", j);
+						dbgf("cleared task %d, close=%d", j, state->net.send_pending[j].close);
 						state->net.send_pending[j].socket_id = -1;
-						//state->net.task[i] = 1; // FIXME there isn't only one message to send
+						if(state->net.send_pending[j].close)
+							state->net.task[i] = 3;
 					}
 				}
 			}
-			if(!has_more) {
-				dbgf("sent all pending messages for client %d", i);
-				state->net.task[i] = 1;
-			} else
-				dbgf("client %d still has more messages, delayed in writefds", i);
+			if(state->net.task[i] == 2) {
+				if(!has_more) {
+					dbgf("sent all pending messages for client %d", i);
+					state->net.task[i] = 1;
+				} else
+					dbgf("client %d still has more messages, delayed in writefds", i);
+			}
 		}
 		// add client sockets that wait for read
 		if(state->net.task[i] == 1)
@@ -228,7 +232,7 @@ static int message_separator(const char *buffer, int buffer_length) {
 	return -1;
 }
 
-static void select_result(m_state *state, fd_set *readfds, fd_set *writefds)
+static void select_result(m_state *state, fd_set *readfds)
 {
 	int i, j, sock, nbytes, r;
 	struct sockaddr_in sin;
@@ -244,32 +248,8 @@ static void select_result(m_state *state, fd_set *readfds, fd_set *writefds)
 
 	// activity on connected clients
 	for(i = 0; i < MAX_CLIENTS; i++) {
-		// send message previously blocked (highest priority)
-		if(state->net.task[i] == 2 && FD_ISSET(state->net.client[i], writefds)) {
-			for(j = 0; j < MAX_PENDING_MESSAGES; j++) {
-				if(state->net.send_pending[j].socket_id == i) {
-					nbytes = send(state->net.client[i], state->net.send_pending[j].buffer,
-							state->net.send_pending[j].buffer_length, MSG_NOSIGNAL);
-					dbgf("sent %d to %d", nbytes, i);
-					if(nbytes == 0)
-						state->net.task[i] = 3;
-					else if(nbytes < 0) {
-						if(errno != EAGAIN)
-							state->net.task[i] = 3;
-						else { // will try again when it's available
-							dbgf("client %d blocked (after)", i);
-							break; // stop sending messages to that client
-						}
-					}
-					else {
-						state->net.send_pending[j].socket_id = -1;
-						state->net.task[i] = 1;
-					}
-				}
-			}
-		}
 		// read message
-		else if(state->net.task[i] == 1 && FD_ISSET(state->net.client[i], readfds)) {
+		if(state->net.task[i] == 1 && FD_ISSET(state->net.client[i], readfds)) {
 			// FIXME deadlock somewhere when receiving a message too long
 			nbytes = read(state->net.client[i],
 					state->net.buffer[i] + state->net.buffer_length[i],
@@ -366,6 +346,11 @@ void *net_thread_func(void *cls) // net thread
 	if(state->net.client_server < 0)
 		goto clean;
 
+#ifdef DEBUG
+	// avoid to have to wait TIME_WAIT state in development
+	setsockopt(state->net.client_server, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int));
+#endif
+
 	if(bind(state->net.client_server, (struct sockaddr *) &client_sin, sizeof(client_sin))) {
 		perror("Cannot bind client server");
 		goto close_client_server;
@@ -393,7 +378,7 @@ void *net_thread_func(void *cls) // net thread
 			dbg("net got quit");
 			break;
 		}
-		select_result(state, &readfds, &writefds);
+		select_result(state, &readfds);
 	} while(1);
 
 	for(i = 0; i < MAX_CLIENTS; i++) {
@@ -418,7 +403,7 @@ clean:
 	pthread_exit(NULL);
 }
 
-static void write_message(u_state *unit_state, int socket_id, char *send_buffer, int *send_buffer_length)
+static void write_message(u_state *unit_state, int socket_id, char *send_buffer, int *send_buffer_length, int close)
 {
 	int i, j;
 	m_state *state;
@@ -449,6 +434,7 @@ static void write_message(u_state *unit_state, int socket_id, char *send_buffer,
 	state->net.task[socket_id] = 2;
 	state->net.send_pending[i].socket_id = socket_id;
 	state->net.send_pending[i].buffer_length = *send_buffer_length;
+	state->net.send_pending[i].close = close;
 	dbgf("len=%d+3", *send_buffer_length);
 	memcpy(state->net.send_pending[i].buffer, send_buffer, *send_buffer_length);
 
@@ -460,19 +446,191 @@ static void write_message(u_state *unit_state, int socket_id, char *send_buffer,
 	pthread_mutex_unlock(&state->comm_mutex);
 }
 
+static int malformed_id(char *user_id) // the 8 characters must be set
+{
+	int i;
+	char ch;
+
+	for(i = 0; i < USER_ID_LENGTH; i++) {
+		ch = user_id[i];
+		if(ch < 49 || (ch > 57 && ch < 65) || (ch > 90 && ch < 97) || ch > 122)
+			return 1;
+	}
+	return 0;
+}
+
+static int read_port(char *port) // the 4 characters must be set
+{
+	char copy[5] = {0};
+	int res;
+
+	memcpy(copy, port, 4);
+	res = atoi(copy);
+	if(res < 1024 || res > 9999)
+		return 0;
+	return res;
+}
+
+static int get_user_pos(char *user_id, char list[MAX_CLIENTS][USER_ID_LENGTH]) // pool mutex must be locked
+{
+	int i;
+
+	for(i = 0; i < MAX_CLIENTS; i++) {
+		if(list[i][0] == '\0' || memcmp(list[i], user_id, USER_ID_LENGTH) == 0)
+			return i;
+	}
+
+	return -1;
+}
+
+static int user_password_to_int(char *user_password) // the 2 characters must be set
+{
+	return ((unsigned) user_password[0] << 8) + (unsigned) user_password[1];
+}
+
 static void read_message(u_state *unit_state, int socket_id, char *read_buffer, int read_buffer_length)
 {
-	int i, send_buffer_length;
+	int i, send_buffer_length, port, user_pos;
 	char send_buffer[MESSAGE_BUFFER_MAX_LENGTH + 3] = {0};
 	m_state *state;
 
+	if(read_buffer_length < 5) // ignore messages too small
+		return;
+
 	state = unit_state->master;
 
-	for(i = 0; i < read_buffer_length; i++)
-		send_buffer[read_buffer_length - i - 1] = read_buffer[i];
-	send_buffer_length = read_buffer_length;
+	// TODO if logged: one switch block, else: another
+	switch(message_type_to_int(read_buffer)) {
+		case REGIS: // note: connected directly after successful registration
+			do {
+				/*
+				 * check length
+				 * check spaces
+				 * check that id is alphanumeric
+				 * check that port is valid
+				 * check that id is not already registered
+				 * check that port is not taken, convert password to int
+				 * login
+				 */
+				if(read_buffer_length != 22) // 5+1+8+1+4+1+2
+					break;
+				if(read_buffer[5] != ' ' || read_buffer[14] != ' ' || read_buffer[19] != ' ')
+					break;
+				if(malformed_id(read_buffer + 6))
+					break;
+				port = read_port(read_buffer + 15);
+				if(port == 0)
+					break;
 
-	write_message(unit_state, socket_id, send_buffer, &send_buffer_length);
+				dbgf("received REGIS id=%.*s port=%d by %d", 8, read_buffer + 6, port, unit_state->id);
+
+				dbgf("lock pool %d.", unit_state->id);
+				pthread_mutex_lock(&state->pool_mutex);
+
+				user_pos = get_user_pos(read_buffer + 6, state->user_id);
+				if(user_pos == -1) {
+					dbg("all user slots are taken");
+					break;
+				}
+				if(state->user_id[user_pos][0] != '\0') {
+					dbgf("user id=%.*s already registered", 8, read_buffer + 6);
+					break;
+				}
+
+				// register
+				memcpy(state->user_id[user_pos], read_buffer + 6, 8);
+				state->user_password[user_pos] = user_password_to_int(read_buffer + 20);
+				state->user_port[user_pos] = port;
+				// FIXME vulnerability if the client disconnects before that message is read, until he reconnects
+				state->user_addr[user_pos] = state->net.client_addr[socket_id];
+
+				// login
+				// FIXME vulnerability
+				state->user_socket_id[user_pos] = socket_id;
+				dbgf("logged on user pos %d", user_pos);
+
+				dbgf("unlock pool %d.", unit_state->id);
+				pthread_mutex_unlock(&state->pool_mutex);
+
+				int_to_message_type(WELCO, send_buffer);
+				send_buffer_length = 5;
+				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);
+				return;
+			} while(0);
+			int_to_message_type(GOBYE, send_buffer);
+			send_buffer_length = 5;
+			write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 1);
+			return;
+		case CONNE:
+			do {
+				/*
+				 * check spaces
+				 * check that id is alphanumeric and is registered
+				 * convert password to int and check that password matches
+				 * login
+				 */
+				if(read_buffer_length != 17) // 5+1+8+1+2
+					break;
+				if(read_buffer[5] != ' ' || read_buffer[14] != ' ')
+					break;
+				if(malformed_id(read_buffer + 6))
+					break;
+
+				dbgf("lock pool %d.", unit_state->id);
+				pthread_mutex_lock(&state->pool_mutex);
+
+				user_pos = get_user_pos(read_buffer + 6, state->user_id);
+				if(user_pos == -1 || state->user_id[user_pos][0] == '\0') {
+					dbg("user id not found");
+					pthread_mutex_unlock(&state->pool_mutex);
+					break;
+				}
+
+				if(user_password_to_int(read_buffer + 15) != state->user_password[user_pos]) {
+					dbg("incorrect password");
+					pthread_mutex_unlock(&state->pool_mutex);
+					break;
+				}
+
+				// login
+				// FIXME vulnerability same as in REGIS
+				state->user_socket_id[user_pos] = socket_id;
+				dbgf("logged on user pos %d", user_pos);
+
+				dbgf("unlock pool %d.", unit_state->id);
+				pthread_mutex_unlock(&state->pool_mutex);
+
+				int_to_message_type(HELLO, send_buffer);
+				send_buffer_length = 5;
+				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);
+				return;
+			} while(0);
+			int_to_message_type(GOBYE, send_buffer);
+			send_buffer_length = 5;
+			write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 1);
+			return;
+		case IQUIT:
+			dbgf("lock pool %d.", unit_state->id);
+			pthread_mutex_lock(&state->pool_mutex);
+
+			// check if logged in
+			for(i = 0; i < MAX_CLIENTS; i++) {
+				if(state->user_socket_id[i] == socket_id) {
+					dbgf("disconnect user pos %d", i);
+					state->user_socket_id[i] = -1;
+					break;
+				}
+			}
+
+			dbgf("unlock pool %d.", unit_state->id);
+			pthread_mutex_unlock(&state->pool_mutex);
+
+			int_to_message_type(GOBYE, send_buffer);
+			send_buffer_length = 5;
+			write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 1);
+			return;
+		// default: ignore unknown messages
+	}
 }
 
 void *unit_thread_func(void *cls) // thread pool unit
@@ -498,9 +656,9 @@ void *unit_thread_func(void *cls) // thread pool unit
 		// check for message
 		for(i = 0; i < MAX_PENDING_MESSAGES; i++) {
 			if(state->net.recv_pending[i].socket_id >= 0) {
-				dbgf("read message from %d: %.*s by %d", state->net.recv_pending[i].socket_id,
+				dbgf("read message from %d: %.*s (%d) by %d", state->net.recv_pending[i].socket_id,
 						state->net.recv_pending[i].buffer_length, state->net.recv_pending[i].buffer,
-						unit_state->id);
+						state->net.recv_pending[i].buffer_length, unit_state->id);
 				// copy message
 				read_buffer_length = state->net.recv_pending[i].buffer_length;
 				memcpy(read_buffer, state->net.recv_pending[i].buffer, read_buffer_length);
