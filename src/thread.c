@@ -1201,6 +1201,8 @@ void *unit_thread_func(void *cls) // thread pool unit
 
 				// save notification pointers
 				for(k = 0; k < MAX_CLIENTS; k++) {
+					if(state->user_id[k][0] == '\0')
+						break;
 					// get next user notification available id
 					for(l = 0; l < MAX_PENDING_NOTIFICATIONS; l++) {
 						if(state->user_notification[k][l] == NULL)
