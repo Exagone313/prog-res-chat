@@ -142,6 +142,7 @@ static void create_fds(m_state *state, fd_set *readfds, fd_set *writefds)
 
 	// add server sockets
 	FD_SET(state->net.client_server, readfds);
+	FD_SET(state->net.promoter_server, readfds);
 
 	for(i = 0; i < MAX_CLIENTS; i++) {
 		// add client sockets that wait for send
@@ -223,7 +224,11 @@ static void create_fds(m_state *state, fd_set *readfds, fd_set *writefds)
 		// else 0 for closed/unset socket
 	}
 
-	// TODO watch promoter sockets
+	// watch promoter sockets
+	for(i = 0; i < MAX_PROMOTERS; i++) {
+		if(state->net.promoter[i] > 0)
+			FD_SET(state->net.promoter[i], readfds);
+	}
 }
 
 // returns the position for the first + of +++
@@ -248,6 +253,7 @@ static void select_result(m_state *state, fd_set *readfds)
 	int i, j, sock, nbytes, r;
 	struct sockaddr_in sin;
 	socklen_t sinlen;
+	char promoter_buffer[230];
 
 	// activity on unlockpipe
 	if(FD_ISSET(state->net.unlockpipe[0], readfds)) {
@@ -331,6 +337,55 @@ static void select_result(m_state *state, fd_set *readfds)
 			if(i == MAX_CLIENTS) { // cannot manage more clients
 				close(sock);
 				dbg("Cannot accept a new client.");
+			}
+		}
+	}
+
+	// new promoter
+	if(FD_ISSET(state->net.client_server, readfds)) {
+		sinlen = sizeof(sin);
+		sock = accept4(state->net.client_server,
+				(struct sockaddr *) &sin, &sinlen, SOCK_NONBLOCK);
+		if(sock > 0) {
+			for(i = 0; i < MAX_PROMOTERS; i++) {
+				if(state->net.promoter[i] == 0) {
+					state->net.promoter[i] = sock;
+					dbgf("Accept new promoter from %d:%d.", sin.sin_addr.s_addr, ntohs(sin.sin_port));
+					break;
+				}
+			}
+			if(i == MAX_PROMOTERS) { // cannot manage more promoters
+				close(sock);
+				dbg("Cannot accept a new promoter.");
+			}
+		}
+	}
+
+	// activity on promoter
+	for(i = 0; i < MAX_PROMOTERS; i++) {
+		if(state->net.promoter[i] > 0) {
+			if(FD_ISSET(state->net.promoter[i], readfds)) {
+				nbytes = read(state->net.promoter[i], promoter_buffer, 230); // 5+1+15+1+4+1+200+3
+				if(nbytes < 31) {
+					dbgf("error when reading from promoter: %d", nbytes);
+					close(state->net.promoter[i]);
+					state->net.promoter[i] = 0;
+				}
+				do {
+					for(j = 0; j < MAX_PENDING_ADS; j++) {
+						if(state->ad_pending[j].buffer_length == 0)
+							break;
+					}
+					if(j == MAX_PENDING_ADS) {
+						dbg("too many pending ads");
+						break;
+					}
+					state->ad_pending[j].buffer_length = nbytes - 6;
+					memcpy(state->ad_pending[j].buffer, promoter_buffer + 6, state->ad_pending[j].buffer_length);
+				} while(0);
+				send(state->net.promoter[i], "PUBL>+++", 8, 0); // TODO cleaner way
+				close(state->net.promoter[i]);
+				state->net.promoter[i] = 0;
 			}
 		}
 	}
@@ -911,6 +966,7 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 							}
 						}
 					} while(cont);
+					friends[user_id] = 0;
 
 					dbgf("lock pool %d.", unit_state->id);
 					pthread_mutex_lock(&state->pool_mutex);
@@ -936,16 +992,18 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 
 					// save notification pointers
 					for(k = 0; k < MAX_CLIENTS; k++) {
-						// get next user notification available id
-						for(j = 0; j < MAX_PENDING_NOTIFICATIONS; j++) {
-							if(state->user_notification[k][j] == NULL)
-								break;
-						}
-						if(j < MAX_PENDING_NOTIFICATIONS) {
-							state->user_notification[k][j] = state->user_notification_buffer
-								+ i * sizeof(*state->user_notification_buffer);
-							state->user_notification_buffer[i].pointing++;
-							udp_notification(unit_state, k, '4', 0);
+						if(friends[k]) {
+							// get next user notification available id
+							for(j = 0; j < MAX_PENDING_NOTIFICATIONS; j++) {
+								if(state->user_notification[k][j] == NULL)
+									break;
+							}
+							if(j < MAX_PENDING_NOTIFICATIONS) {
+								state->user_notification[k][j] = state->user_notification_buffer
+									+ i * sizeof(*state->user_notification_buffer);
+								state->user_notification_buffer[i].pointing++;
+								udp_notification(unit_state, k, '4', 1);
+							}
 						}
 					}
 
@@ -1090,6 +1148,15 @@ void *unit_thread_func(void *cls) // thread pool unit
 				dbgf("unit lock (msg) %d.", unit_state->id);
 				pthread_mutex_lock(&state->comm_mutex);
 
+				break;
+			}
+		}
+
+		// check for ad
+		for(i = 0; i < MAX_PENDING_ADS; i++) {
+			if(state->ad_pending[i].buffer_length > 0) {
+				// TODO notif
+				state->ad_pending[i].buffer_length = 0;
 				break;
 			}
 		}

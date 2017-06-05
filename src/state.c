@@ -33,4 +33,10 @@ void state_init(m_state *state) {
 	for(i = 0; i < MAX_CLIENTS * MAX_UNREAD_MESSAGES; i++) {
 		state->user_message[i].user_id = -1;
 	}
+	for(i = 0; i < MAX_PROMOTERS; i++) {
+		state->net.promoter[i] = 0;
+	}
+	for(i = 0; i < MAX_PENDING_ADS; i++) {
+		state->ad_pending[i].buffer_length = 0;
+	}
 }

@@ -10,6 +10,7 @@ typedef struct u_state u_state; // thread pool unit
 typedef struct message_task message_task;
 typedef struct notification_buffer notification_buffer;
 typedef struct user_message user_message;
+typedef struct ad ad;
 
 struct message_task {
 	int socket_id; // position in m_state.net.client, -1 if task not set
@@ -30,6 +31,11 @@ struct user_message {
 	int buffer_size[USER_MESSAGE_MAX_PARTS]; // -1: out of range, 0: unset, > 0: only useful to do not complete parts with zeros when the number of parts isn't known yet,
 };
 
+struct ad {
+	char buffer[AD_BUFFER_MAX_LENGTH];
+	int buffer_length;
+};
+
 struct n_state {
 	int connected; // number of connected clients
 	int unlockpipe[2];
@@ -42,6 +48,7 @@ struct n_state {
 	int buffer_length[MAX_CLIENTS]; // actual lengths
 	message_task send_pending[MAX_PENDING_MESSAGES];
 	message_task recv_pending[MAX_PENDING_MESSAGES];
+	int promoter[MAX_PROMOTERS]; // connected promoter's sockets
 };
 
 struct u_state {
@@ -66,6 +73,7 @@ struct m_state {
 	user_message *user_sending_message[MAX_CLIENTS]; // can send one message at a time
 	user_message *user_waiting_message[MAX_CLIENTS][MAX_UNREAD_MESSAGES];
 	user_message user_message[MAX_CLIENTS * MAX_UNREAD_MESSAGES];
+	ad ad_pending[MAX_PENDING_ADS];
 	pthread_mutex_t comm_mutex;
 	pthread_cond_t comm_cond;
 	u_state unit[THREAD_POOL_UNITS];
