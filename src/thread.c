@@ -226,8 +226,10 @@ static void create_fds(m_state *state, fd_set *readfds, fd_set *writefds)
 
 	// watch promoter sockets
 	for(i = 0; i < MAX_PROMOTERS; i++) {
-		if(state->net.promoter[i] > 0)
+		if(state->net.promoter[i] > 0) {
+			dbgf("add promoter %d", i);
 			FD_SET(state->net.promoter[i], readfds);
+		}
 	}
 }
 
@@ -341,36 +343,16 @@ static void select_result(m_state *state, fd_set *readfds)
 		}
 	}
 
-	// new promoter
-	if(FD_ISSET(state->net.client_server, readfds)) {
-		sinlen = sizeof(sin);
-		sock = accept4(state->net.client_server,
-				(struct sockaddr *) &sin, &sinlen, SOCK_NONBLOCK);
-		if(sock > 0) {
-			for(i = 0; i < MAX_PROMOTERS; i++) {
-				if(state->net.promoter[i] == 0) {
-					state->net.promoter[i] = sock;
-					dbgf("Accept new promoter from %d:%d.", sin.sin_addr.s_addr, ntohs(sin.sin_port));
-					break;
-				}
-			}
-			if(i == MAX_PROMOTERS) { // cannot manage more promoters
-				close(sock);
-				dbg("Cannot accept a new promoter.");
-			}
-		}
-	}
-
 	// activity on promoter
 	for(i = 0; i < MAX_PROMOTERS; i++) {
-		if(state->net.promoter[i] > 0) {
-			if(FD_ISSET(state->net.promoter[i], readfds)) {
-				nbytes = read(state->net.promoter[i], promoter_buffer, 230); // 5+1+15+1+4+1+200+3
-				if(nbytes < 31) {
-					dbgf("error when reading from promoter: %d", nbytes);
-					close(state->net.promoter[i]);
-					state->net.promoter[i] = 0;
-				}
+		if(state->net.promoter[i] > 0 && FD_ISSET(state->net.promoter[i], readfds)) {
+			dbg("activity on promoter");
+			nbytes = read(state->net.promoter[i], promoter_buffer, 230); // 5+1+15+1+4+1+200+3
+			if(nbytes < 31) {
+				dbgf("error when reading from promoter: %d", nbytes);
+				close(state->net.promoter[i]);
+				state->net.promoter[i] = 0;
+			} else {
 				do {
 					for(j = 0; j < MAX_PENDING_ADS; j++) {
 						if(state->ad_pending[j].buffer_length == 0)
@@ -386,6 +368,27 @@ static void select_result(m_state *state, fd_set *readfds)
 				send(state->net.promoter[i], "PUBL>+++", 8, 0); // TODO cleaner way
 				close(state->net.promoter[i]);
 				state->net.promoter[i] = 0;
+			}
+		}
+	}
+
+	// new promoter
+	if(FD_ISSET(state->net.promoter_server, readfds)) {
+		dbg("new promoter");
+		sinlen = sizeof(sin);
+		sock = accept4(state->net.client_server,
+				(struct sockaddr *) &sin, &sinlen, SOCK_NONBLOCK);
+		if(sock > 0) {
+			for(i = 0; i < MAX_PROMOTERS; i++) {
+				if(state->net.promoter[i] == 0) {
+					state->net.promoter[i] = sock;
+					dbgf("Accept new promoter from %d:%d.", sin.sin_addr.s_addr, ntohs(sin.sin_port));
+					break;
+				}
+			}
+			if(i == MAX_PROMOTERS) { // cannot manage more promoters
+				close(sock);
+				dbg("Cannot accept a new promoter.");
 			}
 		}
 	}
@@ -913,10 +916,19 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 			case MESSX:
 				do {
 					/*
+					 * check length
+					 * check target exists and is friend
 					 * check if the message isn't null, create it if it is
 					 * else, update part length
 					 * if all parts are set, save message as sent
 					 */
+					if(read_buffer_length != 19) // 5+1+8+1+4
+						break;
+					user_pos = get_user_pos(read_buffer + 6, state->user_id);
+					if(user_pos == -1)
+						break;
+					if(!state->user_friend[user_id][user_pos])
+						break;
 				} while(0);
 				int_to_message_type(MESSZ, send_buffer);
 				send_buffer_length = 5;
@@ -924,10 +936,21 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 				return;
 			case MENUM:
 				/*
-				 * check if the message isn't null, create it if it is (then there is no length)
+				 * check length
+				 * check if the message isn't null, create it if it is (then there is no length and no target)
 				 * if the part num isn't out of range: bzero the part buffer, save the part, save part length
-				 * if length is known and all parts are set, save message as sent
+				 * if target is known and all parts are set, save message as sent
 				 */
+				if(read_buffer_length > 214) {
+					dbgf("lock comm %d mess too large.", unit_state->id);
+					pthread_mutex_lock(&state->comm_mutex);
+
+					state->net.task[socket_id] = 3;
+
+					dbgf("unlock comm %d.", unit_state->id);
+					pthread_mutex_unlock(&state->comm_mutex);
+					return;
+				}
 				return;
 			case FLOOX:
 				/*

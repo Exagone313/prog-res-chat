@@ -18,6 +18,10 @@ void state_init(m_state *state) {
 			state->friend_request[i][j] = -1;
 			state->user_friend[i][j] = 0;
 		}
+		state->user_sending_message[i] = NULL;
+		for(j = 0; j < MAX_UNREAD_MESSAGES ; j++) {
+			state->user_waiting_message[i][j] = NULL;
+		}
 	}
 	for(i = 0; i < THREAD_POOL_UNITS; i++) {
 		state->unit[i].master = state;
