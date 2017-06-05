@@ -843,14 +843,29 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 				return;
 			case MESSX:
 				do {
+					/*
+					 * check if the message isn't null, create it if it is
+					 * else, update part length
+					 * if all parts are set, save message as sent
+					 */
 				} while(0);
 				int_to_message_type(MESSZ, send_buffer);
 				send_buffer_length = 5;
 				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);
 				return;
+			case MENUM:
+				/*
+				 * check if the message isn't null, create it if it is (then there is no length)
+				 * if the part num isn't out of range: bzero the part buffer, save the part, save part length
+				 * if length is known and all parts are set, save message as sent
+				 */
+				return;
 			case FLOOX:
-				do {
-				} while(0);
+				/*
+				 * array[MAX_CLIENTS]: 0 = not friend, 1 = not looked at his friends, 2 = looked at his friends
+				 * while array has at least a 1, continue to loop
+				 * then create notifications
+				 */
 				int_to_message_type(FLOOY, send_buffer);
 				send_buffer_length = 5;
 				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);

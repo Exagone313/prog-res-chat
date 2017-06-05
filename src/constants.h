@@ -23,10 +23,12 @@
 /* per user */
 #define MAX_PENDING_NOTIFICATIONS 100
 #define MAX_NOTIFICATION_BUFFERS MAX_CLIENTS * MAX_PENDING_NOTIFICATIONS
+#define USER_MESSAGE_MAX_PARTS 5
 
 /* protocol constants */
 
 #define USER_ID_LENGTH 8
+#define USER_MESSAGE_PART_LENGTH 200
 
 /* macro utils */
 
