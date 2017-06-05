@@ -510,6 +510,53 @@ static int user_password_to_int(char *user_password) // the 2 characters must be
 	return ((unsigned) user_password[0] << 8) + (unsigned) user_password[1];
 }
 
+static void udp_notification(u_state *unit_state, int user_id, char notification, int nolock)
+{
+	int sock, notification_number;
+	char buffer[3] = {notification, 0};
+	m_state *state;
+
+	state = unit_state->master;
+
+	// create socket
+	sock = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
+	if(sock < 0) {
+		perror("udp socket");
+		return;
+	}
+
+	if(!nolock) {
+		dbgf("lock pool %d.", unit_state->id);
+		pthread_mutex_lock(&state->pool_mutex);
+	}
+
+	struct sockaddr_in sin = {AF_INET,
+		htons(state->user_port[user_id]), {state->user_addr[user_id]}, {0}};
+
+	// get notification number
+	for(notification_number = 0; notification_number < MAX_PENDING_NOTIFICATIONS; notification_number++) {
+		if(state->user_notification[user_id][notification_number] == NULL)
+			break;
+	}
+
+	if(!nolock) {
+		dbgf("unlock pool %d.", unit_state->id);
+		pthread_mutex_unlock(&state->pool_mutex);
+	}
+
+	if(notification_number > 99)
+		notification_number = 99;
+
+	buffer[1] = notification_number % 10;
+	buffer[2] = notification_number / 10;
+
+	// send udp notification
+	dbgf("send udp %c.%d to %d by %d.", notification, notification_number, user_id, unit_state->id);
+	sendto(sock, buffer, 3, MSG_NOSIGNAL, &sin, sizeof(sin));
+
+	close(sock);
+}
+
 static void read_message(u_state *unit_state, int socket_id, char *read_buffer, int read_buffer_length)
 {
 	int i, j, send_buffer_length, message_type, port, user_pos, user_number, user_id;
@@ -787,7 +834,7 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 					send_buffer_length = 5;
 					write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);
 
-					// TODO udp notif
+					udp_notification(unit_state, user_pos, '0', 0);
 					return;
 				} while(0);
 				int_to_message_type(FRIEZ, send_buffer);
@@ -879,9 +926,9 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 					if(message_type == OKIRF) { // make them friends
 						state->user_friend[user_id][state->friend_request[user_id][0]] = 1;
 						state->user_friend[state->friend_request[user_id][0]][user_id] = 1;
-						// TODO udp notification
-					}
-					// TODO else udp notification
+						udp_notification(unit_state, state->friend_request[user_id][0], '1', 1);
+					} else
+						udp_notification(unit_state, state->friend_request[user_id][0], '2', 1);
 
 					// erase friend request
 					memmove(state->friend_request[user_id], state->friend_request[user_id] + 1,
