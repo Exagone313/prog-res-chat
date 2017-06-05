@@ -1048,19 +1048,15 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 						break;
 					}
 
-					for(i = 1; i < MAX_PENDING_NOTIFICATIONS - 1; i++) {
-						if(state->user_notification[user_id][0] == NULL)
-							break;
-					}
-
 					send_buffer_length = (*state->user_notification[user_id][0]).buffer_length;
 					(*state->user_notification[user_id][0]).pointing--;
 					memcpy(send_buffer, (*state->user_notification[user_id][0]).buffer,
 							(*state->user_notification[user_id][0]).buffer_length);
+
 					memmove(state->user_notification[user_id],
 							state->user_notification[user_id] + sizeof(*state->user_notification[user_id]),
-							i);
-					state->user_notification[user_id][i - 1] = NULL;
+							(MAX_PENDING_NOTIFICATIONS - 1) * sizeof(*state->user_notification[user_id]));
+					state->user_notification[user_id][MAX_PENDING_NOTIFICATIONS - 1] = NULL;
 
 					dbgf("unlock pool %d.", unit_state->id);
 					pthread_mutex_unlock(&state->pool_mutex);
@@ -1114,8 +1110,8 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 						udp_notification(unit_state, state->friend_request[user_id][0], '2', 1);
 
 					// erase friend request
-					memmove(state->friend_request[user_id], state->friend_request[user_id] + 1,
-							MAX_CLIENTS - 1);
+					memmove(state->friend_request[user_id], state->friend_request[user_id] + *state->friend_request[user_id],
+							(MAX_CLIENTS - 1) * sizeof(state->friend_request[user_id]));
 					state->friend_request[user_id][MAX_CLIENTS - 1] = -1;
 
 					dbgf("unlock pool %d.", unit_state->id);
