@@ -1169,7 +1169,7 @@ void *unit_thread_func(void *cls) // thread pool unit
 				}
 
 				// save notification
-				state->user_notification_buffer[j].buffer_length = read_buffer_length + 9;
+				state->user_notification_buffer[j].buffer_length = state->ad_pending[i].buffer_length + 6;
 				int_to_message_type(LBUPY, state->user_notification_buffer[j].buffer);
 				state->user_notification_buffer[j].buffer[5] = ' ';
 				memcpy(state->user_notification_buffer[j].buffer + 6,
