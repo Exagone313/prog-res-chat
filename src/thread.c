@@ -924,7 +924,7 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 					for(k = 0; k < MAX_CLIENTS; k++) {
 						// get next user notification available id
 						for(j = 0; j < MAX_PENDING_NOTIFICATIONS; j++) {
-							if(state->user_notification[user_pos][j] == NULL)
+							if(state->user_notification[k][j] == NULL)
 								break;
 						}
 						if(j < MAX_PENDING_NOTIFICATIONS) {
