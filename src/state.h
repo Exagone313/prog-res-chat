@@ -63,9 +63,6 @@ struct m_state {
 	notification_buffer user_notification_buffer[MAX_NOTIFICATION_BUFFERS];
 	int friend_request[MAX_CLIENTS][MAX_CLIENTS]; // requests are ordered
 	int user_friend[MAX_CLIENTS][MAX_CLIENTS]; // 1 if friend, 0 if not, both ways are set
-	user_message *user_sending_message[MAX_CLIENTS]; // can send one message at a time
-	user_message *user_waiting_message[MAX_CLIENTS][MAX_PENDING_NOTIFICATIONS];
-	user_message user_message[MAX_CLIENTS * MAX_PENDING_NOTIFICATIONS];
 	pthread_mutex_t comm_mutex;
 	pthread_cond_t comm_cond;
 	u_state unit[THREAD_POOL_UNITS];
