@@ -1109,7 +1109,7 @@ void *unit_thread_func(void *cls) // thread pool unit
 {
 	u_state *unit_state;
 	m_state *state;
-	int i, socket_id;
+	int i, j, k, l, socket_id;
 	char read_buffer[MESSAGE_BUFFER_MAX_LENGTH] = {0};
 	int read_buffer_length;
 
@@ -1155,7 +1155,45 @@ void *unit_thread_func(void *cls) // thread pool unit
 		// check for ad
 		for(i = 0; i < MAX_PENDING_ADS; i++) {
 			if(state->ad_pending[i].buffer_length > 0) {
-				// TODO notif
+				dbgf("lock pool %d.", unit_state->id); // surely useless
+				pthread_mutex_lock(&state->pool_mutex);
+
+				// get next notification buffer available id
+				for(j = 0; j < MAX_NOTIFICATION_BUFFERS; j++) {
+					if(state->user_notification_buffer[j].pointing == 0)
+						break;
+				}
+				if(j == MAX_NOTIFICATION_BUFFERS) {
+					dbg("too many global notifications");
+					break;
+				}
+
+				// save notification
+				state->user_notification_buffer[j].buffer_length = read_buffer_length + 9;
+				int_to_message_type(LBUPY, state->user_notification_buffer[j].buffer);
+				state->user_notification_buffer[j].buffer[5] = ' ';
+				memcpy(state->user_notification_buffer[j].buffer + 6,
+						state->ad_pending[i].buffer, state->ad_pending[i].buffer_length);
+
+				// save notification pointers
+				for(k = 0; k < MAX_CLIENTS; k++) {
+					// get next user notification available id
+					for(l = 0; l < MAX_PENDING_NOTIFICATIONS; l++) {
+						if(state->user_notification[k][l] == NULL)
+							break;
+					}
+					if(j < MAX_PENDING_NOTIFICATIONS) {
+						state->user_notification[k][l] = state->user_notification_buffer
+							+ i * sizeof(*state->user_notification_buffer);
+						state->user_notification_buffer[j].pointing++;
+						udp_notification(unit_state, k, '5', 1);
+					}
+				}
+
+				dbgf("unlock pool %d.", unit_state->id);
+				pthread_mutex_unlock(&state->pool_mutex);
+
+				// unset ad
 				state->ad_pending[i].buffer_length = 0;
 				break;
 			}
