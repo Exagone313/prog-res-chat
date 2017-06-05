@@ -1089,6 +1089,14 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 					dbgf("lock pool %d.", unit_state->id);
 					pthread_mutex_lock(&state->pool_mutex);
 
+#ifdef DEBUG
+					fprintf(stderr, "notif set: ");
+					for(i = 0; i < MAX_PENDING_NOTIFICATIONS; i++) {
+						fprintf(stderr, "%d ", (state->user_notification[user_id][i] == NULL) ? 0 : 1);
+					}
+					fprintf(stderr, "\n");
+#endif
+
 					if(state->user_notification[user_id][0] == NULL) {
 						dbg("no notification");
 						pthread_mutex_unlock(&state->pool_mutex);
@@ -1100,10 +1108,21 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 					memcpy(send_buffer, (*state->user_notification[user_id][0]).buffer,
 							(*state->user_notification[user_id][0]).buffer_length);
 
-					memmove(state->user_notification[user_id],
+					/*memmove(state->user_notification[user_id],
 							state->user_notification[user_id] + sizeof(*state->user_notification[user_id]),
-							(MAX_PENDING_NOTIFICATIONS - 1) * sizeof(*state->user_notification[user_id]));
+							(MAX_PENDING_NOTIFICATIONS - 1) * sizeof(*state->user_notification[user_id]));*/
+					for(i = 1; i < MAX_PENDING_NOTIFICATIONS - 1; i++) {
+						state->user_notification[user_id][i - 1] = state->user_notification[user_id][i];
+					}
 					state->user_notification[user_id][MAX_PENDING_NOTIFICATIONS - 1] = NULL;
+
+#ifdef DEBUG
+					fprintf(stderr, "notif set2: ");
+					for(i = 0; i < MAX_PENDING_NOTIFICATIONS; i++) {
+						fprintf(stderr, "%d ", (state->user_notification[user_id][i] == NULL) ? 0 : 1);
+					}
+					fprintf(stderr, "\n");
+#endif
 
 					dbgf("unlock pool %d.", unit_state->id);
 					pthread_mutex_unlock(&state->pool_mutex);
