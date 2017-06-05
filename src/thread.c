@@ -1053,6 +1053,7 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 							break;
 					}
 
+					send_buffer_length = (*state->user_notification[user_id][0]).buffer_length;
 					(*state->user_notification[user_id][0]).pointing--;
 					memcpy(send_buffer, (*state->user_notification[user_id][0]).buffer,
 							(*state->user_notification[user_id][0]).buffer_length);
