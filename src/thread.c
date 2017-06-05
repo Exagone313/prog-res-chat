@@ -559,7 +559,7 @@ static void udp_notification(u_state *unit_state, int user_id, char notification
 
 static void read_message(u_state *unit_state, int socket_id, char *read_buffer, int read_buffer_length)
 {
-	int i, j, send_buffer_length, message_type, port, user_pos, user_number, user_id;
+	int i, j, k, send_buffer_length, message_type, port, user_pos, user_number, user_id, cont;
 	char send_buffer[MESSAGE_BUFFER_MAX_LENGTH + 3] = {0};
 	m_state *state;
 
@@ -866,6 +866,77 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 				 * while array has at least a 1, continue to loop
 				 * then create notifications
 				 */
+				do {
+					if(read_buffer_length > 206) {
+						dbgf("lock comm %d flood too large.", unit_state->id);
+						pthread_mutex_lock(&state->comm_mutex);
+
+						state->net.task[socket_id] = 3;
+
+						dbgf("unlock comm %d.", unit_state->id);
+						pthread_mutex_unlock(&state->comm_mutex);
+						return;
+					}
+					int friends[MAX_CLIENTS] = {0};
+					friends[user_id] = 1;
+					do {
+						cont = 0;
+						for(i = 0; i < MAX_CLIENTS; i++) {
+							if(friends[i] == 1) { // add his friends
+								friends[i] = 2;
+								dbgf("lock pool %d.", unit_state->id);
+								pthread_mutex_lock(&state->pool_mutex);
+								for(j = 0; j < MAX_CLIENTS; j++) {
+									if(state->user_friend[i][j] && !friends[j]) {
+										friends[j] = 1;
+										cont = 1;
+									}
+								}
+								dbgf("unlock pool %d.", unit_state->id);
+								pthread_mutex_unlock(&state->pool_mutex);
+							}
+						}
+					} while(cont);
+
+					dbgf("lock pool %d.", unit_state->id);
+					pthread_mutex_lock(&state->pool_mutex);
+
+					// get next notification buffer available id
+					for(i = 0; i < MAX_NOTIFICATION_BUFFERS; i++) {
+						if(state->user_notification_buffer[i].pointing == 0)
+							break;
+					}
+					if(i == MAX_NOTIFICATION_BUFFERS) {
+						dbg("too many global notifications");
+						pthread_mutex_unlock(&state->pool_mutex);
+						break;
+					}
+
+					// save notification
+					state->user_notification_buffer[i].buffer_length = read_buffer_length + 9;
+					int_to_message_type(OOLFY, state->user_notification_buffer[i].buffer);
+					state->user_notification_buffer[i].buffer[5] = ' ';
+					memcpy(state->user_notification_buffer[i].buffer + 6, state->user_id[user_id], 8);
+					state->user_notification_buffer[i].buffer[14] = ' ';
+					memcpy(state->user_notification_buffer[i].buffer + 15, read_buffer + 6, read_buffer_length - 6);
+
+					// save notification pointers
+					for(k = 0; k < MAX_CLIENTS; k++) {
+						// get next user notification available id
+						for(j = 0; j < MAX_PENDING_NOTIFICATIONS; j++) {
+							if(state->user_notification[user_pos][j] == NULL)
+								break;
+						}
+						if(j < MAX_PENDING_NOTIFICATIONS) {
+							state->user_notification[k][j] = state->user_notification_buffer
+								+ i * sizeof(*state->user_notification_buffer);
+							state->user_notification_buffer[i].pointing++;
+						}
+					}
+
+					dbgf("unlock pool %d.", unit_state->id);
+					pthread_mutex_unlock(&state->pool_mutex);
+				} while(0);
 				int_to_message_type(FLOOY, send_buffer);
 				send_buffer_length = 5;
 				write_message(unit_state, socket_id, send_buffer, &send_buffer_length, 0);
