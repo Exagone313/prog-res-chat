@@ -18,12 +18,13 @@
 #define MAX_CLIENTS 100
 #define SOCKET_BUFFER_MAX_LENGTH 1024
 /* to reserve memory instead of using memory allocation */
-#define MAX_PENDING_MESSAGES 1000
+#define MAX_PENDING_MESSAGES 100
 #define MESSAGE_BUFFER_MAX_LENGTH 512
 /* per user */
 #define MAX_PENDING_NOTIFICATIONS 100
 #define MAX_NOTIFICATION_BUFFERS MAX_CLIENTS * MAX_PENDING_NOTIFICATIONS
 #define USER_MESSAGE_MAX_PARTS 5
+#define MAX_UNREAD_MESSAGES 5
 
 /* protocol constants */
 

@@ -30,4 +30,7 @@ void state_init(m_state *state) {
 	for(i = 0; i < MAX_NOTIFICATION_BUFFERS; i++) {
 		state->user_notification_buffer[i].pointing = 0;
 	}
+	for(i = 0; i < MAX_CLIENTS * MAX_UNREAD_MESSAGES; i++) {
+		state->user_message[i].user_id = -1;
+	}
 }
