@@ -924,11 +924,42 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 					 */
 					if(read_buffer_length != 19) // 5+1+8+1+4
 						break;
+					if(read_buffer[5] != ' ' || read_buffer[14] != ' ')
+						break;
 					user_pos = get_user_pos(read_buffer + 6, state->user_id);
 					if(user_pos == -1)
 						break;
 					if(!state->user_friend[user_id][user_pos])
 						break;
+
+					// get number of parts
+					char parts[5] = {0};
+					memcpy(parts, read_buffer + 15, 4);
+					k = atoi(parts);
+
+					if(k < 1 || k > USER_MESSAGE_MAX_PARTS)
+						break;
+
+					/*if(state->user_sending_message[user_id] == NULL) { // create message
+						for(i = 0; i < MAX_CLIENTS * MAX_UNREAD_MESSAGES; i++) {
+							if(state->user_message[i].user_id == -1)
+								break;
+						}
+						if(i == MAX_CLIENTS * MAX_UNREAD_MESSAGES) {
+							dbg("too many user messages");
+							break;
+						}
+						state->user_sending_message[user_id] = state->user_message + i * sizeof(*state->user_message);
+					}
+					state->user_sending_message[user_id]->parts = k;
+
+					for(i = 0; i < state->user_sending_message[user_id]->parts; i++) {
+						if(state->user_sending_message[user_id]->buffer_size[i] == 0)
+							break;
+					}
+					if(i == state->user_sending_message[user_id]->parts) {
+						// TODO save message as sent
+					}*/
 				} while(0);
 				int_to_message_type(MESSZ, send_buffer);
 				send_buffer_length = 5;
@@ -941,7 +972,7 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 				 * if the part num isn't out of range: bzero the part buffer, save the part, save part length
 				 * if target is known and all parts are set, save message as sent
 				 */
-				if(read_buffer_length > 214) {
+				if(read_buffer_length > 211) { // 5+1+4+1+200
 					dbgf("lock comm %d mess too large.", unit_state->id);
 					pthread_mutex_lock(&state->comm_mutex);
 
@@ -951,6 +982,22 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 					pthread_mutex_unlock(&state->comm_mutex);
 					return;
 				}
+				if(read_buffer_length < 7)
+					return;
+
+				/*if(state->user_sending_message[user_id] == NULL) { // create message
+					for(i = 0; i < MAX_CLIENTS * MAX_UNREAD_MESSAGES; i++) {
+						if(state->user_message[i].user_id == -1)
+							break;
+					}
+					if(i == MAX_CLIENTS * MAX_UNREAD_MESSAGES) {
+						dbg("too many user messages");
+						break;
+					}
+					state->user_sending_message[user_id] = state->user_message + i * sizeof(*state->user_message);
+					state->user_sending_message[user_id]->parts = 0;
+				}*/
+
 				return;
 			case FLOOX:
 				/*

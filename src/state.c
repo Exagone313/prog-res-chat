@@ -36,6 +36,7 @@ void state_init(m_state *state) {
 	}
 	for(i = 0; i < MAX_CLIENTS * MAX_UNREAD_MESSAGES; i++) {
 		state->user_message[i].user_id = -1;
+		state->user_message[i].parts = 0;
 	}
 	for(i = 0; i < MAX_PROMOTERS; i++) {
 		state->net.promoter[i] = 0;

@@ -29,6 +29,7 @@ struct user_message {
 	int user_id; // receiver id, -1 for unset
 	char buffer[USER_MESSAGE_MAX_PARTS * USER_MESSAGE_PART_LENGTH];
 	int buffer_size[USER_MESSAGE_MAX_PARTS]; // -1: out of range, 0: unset, > 0: only useful to do not complete parts with zeros when the number of parts isn't known yet,
+	int parts;
 };
 
 struct ad {
