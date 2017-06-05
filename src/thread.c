@@ -931,6 +931,7 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 							state->user_notification[k][j] = state->user_notification_buffer
 								+ i * sizeof(*state->user_notification_buffer);
 							state->user_notification_buffer[i].pointing++;
+							udp_notification(unit_state, k, '4', 0);
 						}
 					}
 
