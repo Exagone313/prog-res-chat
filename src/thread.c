@@ -344,7 +344,7 @@ void *net_thread_func(void *cls) // net thread
 	int err, i;
 	fd_set readfds, writefds;
 	struct sockaddr_in client_sin = {AF_INET, htons(getClientBindPort()), {getClientBindAddress()}, {0}};
-	//struct sockaddr_in promoter_sin = {AF_INET, htons(getPromoterBindPort()), {getPromoterBindAddress()}, {0}};
+	struct sockaddr_in promoter_sin = {AF_INET, htons(getPromoterBindPort()), {getPromoterBindAddress()}, {0}};
 
 	err = 1;
 
@@ -356,21 +356,33 @@ void *net_thread_func(void *cls) // net thread
 	if(state->net.client_server < 0)
 		goto clean;
 
+	state->net.promoter_server = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+	if(state->net.promoter_server < 0)
+		goto close_client_server;
+
 #ifdef DEBUG
 	// avoid to have to wait TIME_WAIT state in development
 	setsockopt(state->net.client_server, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int));
+	setsockopt(state->net.promoter_server, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int));
 #endif
 
 	if(bind(state->net.client_server, (struct sockaddr *) &client_sin, sizeof(client_sin))) {
 		perror("Cannot bind client server");
-		goto close_client_server;
+		goto close_promoter_server;
 	}
 	if(listen(state->net.client_server, 100)) {
 		perror("Cannot listen client server");
-		goto close_client_server;
+		goto close_promoter_server;
 	}
 
-	// TODO create promoter socket
+	if(bind(state->net.promoter_server, (struct sockaddr *) &promoter_sin, sizeof(promoter_sin))) {
+		perror("Cannot bind promoter server");
+		goto close_promoter_server;
+	}
+	if(listen(state->net.promoter_server, 5)) {
+		perror("Cannot listen promoter server");
+		goto close_promoter_server;
+	}
 
 	err = 0;
 
@@ -395,6 +407,8 @@ void *net_thread_func(void *cls) // net thread
 		if(state->net.client[i] > 0)
 			close(state->net.client[i]);
 	}
+close_promoter_server:
+	close(state->net.promoter_server);
 close_client_server:
 	close(state->net.client_server);
 clean:
