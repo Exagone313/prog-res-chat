@@ -376,7 +376,7 @@ static void select_result(m_state *state, fd_set *readfds)
 	if(FD_ISSET(state->net.promoter_server, readfds)) {
 		dbg("new promoter");
 		sinlen = sizeof(sin);
-		sock = accept4(state->net.client_server,
+		sock = accept4(state->net.promoter_server,
 				(struct sockaddr *) &sin, &sinlen, SOCK_NONBLOCK);
 		if(sock > 0) {
 			for(i = 0; i < MAX_PROMOTERS; i++) {
