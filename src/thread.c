@@ -854,6 +854,28 @@ static void read_message(u_state *unit_state, int socket_id, char *read_buffer, 
 						break;
 					}
 
+					// get next user notification available id
+					for(j = 0; j < MAX_PENDING_NOTIFICATIONS; j++) {
+						if(state->user_notification[state->friend_request[user_id][0]][j] == NULL)
+							break;
+					}
+					if(j == MAX_PENDING_NOTIFICATIONS)
+						dbg("too many user notifications");
+					else {
+						// save notification
+						state->user_notification_buffer[i].pointing = 1;
+						state->user_notification_buffer[i].buffer_length = 14;
+						int_to_message_type((message_type == OKIRF) ? FRIEN : NOFRI,
+								state->user_notification_buffer[i].buffer);
+						state->user_notification_buffer[i].buffer[5] = ' ';
+						memcpy(state->user_notification_buffer[i].buffer + 6,
+								state->user_id[state->friend_request[user_id][0]], 8);
+
+						// save notification pointer
+						state->user_notification[state->friend_request[user_id][0]][j] =
+							state->user_notification_buffer + i * sizeof(*state->user_notification_buffer);
+					}
+
 					if(message_type == OKIRF) { // make them friends
 						state->user_friend[user_id][state->friend_request[user_id][0]] = 1;
 						state->user_friend[state->friend_request[user_id][0]][user_id] = 1;
