@@ -31,13 +31,13 @@
 /* macro utils */
 
 #ifdef DEBUG
-#define dbg(format) fprintf(stderr, "[DEBUG] " format "\n");
-#define dbgf(format, ...) fprintf(stderr, "[DEBUG] " format "\n", ##__VA_ARGS__);
+#define dbg(format) fprintf(stderr, "[DEBUG] " format "\n")
+#define dbgf(format, ...) fprintf(stderr, "[DEBUG] " format "\n", ##__VA_ARGS__)
 #else
-#define dbg(format) while(0);
-#define dbgf(format, ...) while(0);
+#define dbg(format) while(0)
+#define dbgf(format, ...) while(0)
 #endif
-#define err(format) fprintf(stderr, "[ERROR] " format "\n");
-#define errf(format, ...) fprintf(stderr, "[ERROR] " format "\n", ##__VA_ARGS__);
+#define err(format) fprintf(stderr, "[ERROR] " format "\n")
+#define errf(format, ...) fprintf(stderr, "[ERROR] " format "\n", ##__VA_ARGS__)
 
 #endif
